@@ -49,11 +49,30 @@ jobs:
           BYTES=$(stat -c%s "$FILE")
           echo "Board: ${{ matrix.target }}, Firmware size: $BYTES bytes"
           test "$BYTES" -le 1966080
+      - name: Create first-flash factory image
+        shell: bash
+        run: |
+          python -m pip install 'esptool==4.8.1'
+          TARGET="${{ matrix.target }}"
+          BUILD=".pio/build/$TARGET"
+          BOOT_APP="$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin"
+          test -f "$BOOT_APP"
+          python -m esptool --chip esp32 merge_bin \
+            -o "$BUILD/skytracker-$TARGET-factory.bin" \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 "$BUILD/bootloader.bin" \
+            0x8000 "$BUILD/partitions.bin" \
+            0xe000 "$BOOT_APP" \
+            0x10000 "$BUILD/firmware.bin"
+          python -m esptool --chip esp32 image_info "$BUILD/firmware.bin"
+          sha256sum "$BUILD/skytracker-$TARGET-factory.bin" "$BUILD/firmware.bin" > "$BUILD/checksums.txt"
       - name: Save development firmware (NOT A RELEASE)
         uses: actions/upload-artifact@v4
         with:
           name: skytracker-dev-${{ matrix.target }}
           path: |
+            .pio/build/${{ matrix.target }}/skytracker-${{ matrix.target }}-factory.bin
+            .pio/build/${{ matrix.target }}/checksums.txt
             .pio/build/${{ matrix.target }}/firmware.bin
             .pio/build/${{ matrix.target }}/bootloader.bin
             .pio/build/${{ matrix.target }}/partitions.bin
