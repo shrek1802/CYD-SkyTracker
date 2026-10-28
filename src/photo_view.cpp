@@ -45,7 +45,8 @@ bool acceptedLicence(String licence) {
            licence.startsWith("CC-BY-")||licence.startsWith("CC-BY-SA-");
 }
 bool allowedImageUrl(const String& url) {
-    return url.startsWith("https://upload.wikimedia.org/")&&url.length()<1024;
+    return (url.startsWith("https://upload.wikimedia.org/") ||
+            url.startsWith("https://thumb.wikimedia.org/")) && url.length()<1024;
 }
 String encode(const String& input) {
     String out;out.reserve(input.length()*3);
