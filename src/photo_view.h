@@ -10,6 +10,7 @@ public:
     PhotoView() = default;
     ~PhotoView() { clear(); }
     void clear();
+    void searching() { status_ = "Searching aircraft photo..."; }
     void load(const char* registration);
     void draw(TFT_eSPI& display) const;
     void drawCredit(TFT_eSPI& display) const;
