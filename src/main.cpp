@@ -271,6 +271,7 @@ void loop() {
                 drawRadar();
             } else if (tracker.selectAt(touchEndX, touchEndY, mapView)) {
                 detailShowing = true;
+                photo.searching();
                 drawFlightScreen(); // Feedback while Wi-Fi image loads
                 const AircraftRecord* aircraft = tracker.selectedRecord();
                 photo.load(aircraft ? aircraft->registration : nullptr);
