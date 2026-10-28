@@ -2,16 +2,16 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 
-// Optional, live on-demand Wikimedia Commons thumbnail. Only searches for
-// an exact aircraft registration and accepted freely reusable licences.
-// No SD photo cache; temporary JPEG held in RAM only while details open.
+// Photo lookup uses ICAO aircraft *type* first. The shown image is explicitly
+// labelled "Representative" and never presented as the tracked airframe.
+// Optional /aircraft/ SD JPEGs avoid dependence on internet image searches.
 class PhotoView {
 public:
     PhotoView() = default;
     ~PhotoView() { clear(); }
     void clear();
     void searching() { status_ = "Searching aircraft photo..."; }
-    void load(const char* registration);
+    void load(const char* registration, const char* type, bool sdReady);
     void draw(TFT_eSPI& display) const;
     void drawCredit(TFT_eSPI& display) const;
     const String& status() const { return status_; }
@@ -22,4 +22,6 @@ private:
     String artist_;
     String licence_;
     String source_;
+    String model_;
+    bool representative_ = false;
 };
