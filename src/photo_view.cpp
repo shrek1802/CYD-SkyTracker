@@ -6,6 +6,7 @@
 #include <WiFiClientSecure.h>
 #include <TJpg_Decoder.h>
 #include <cstdlib>
+#include <algorithm>
 
 namespace {
 constexpr size_t kMaxJpegBytes = 90000;
@@ -17,7 +18,8 @@ bool drawJpegBlock(int16_t x, int16_t y, uint16_t w, uint16_t h,
     if (!currentDisplay || x >= kX + kW || y >= kY + kH) return false;
     // The decoder's blocks are generally 8 or 16 pixels wide. The image is
     // requested at 280px and scaled by 2, keeping it inside the photo panel.
-    currentDisplay->pushImage(x, y, w, h, bitmap);
+    const uint16_t visibleRows = uint16_t(std::min<int>(int(h), kY + kH - y));
+    currentDisplay->pushImage(x, y, w, visibleRows, bitmap);
     return true;
 }
 
@@ -97,7 +99,7 @@ void PhotoView::load(const char* registration) {
     http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
     const String url = "https://commons.wikimedia.org/w/api.php?action=query" 
         "&generator=search&gsrnamespace=6&gsrlimit=5&gsrsearch=intitle%3A%22" +
-        reg + "%22&prop=imageinfo&iiprop=url%7Cextmetadata"
+        reg + "%22&prop=imageinfo&iiprop=url%7Cextmetadata%7Cmime"
         "&iiurlwidth=280&format=json&formatversion=2";
     if (!http.begin(client, url)) {
         status_ = "Photo search unavailable";
