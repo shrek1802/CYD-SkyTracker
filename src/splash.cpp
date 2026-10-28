@@ -10,7 +10,7 @@ constexpr uint16_t kBrightCyan = 0x07DF;
 constexpr uint16_t kBlue = 0x03B5;
 constexpr uint16_t kSoftBlue = 0x01E6;
 int safeRadius(int w,int h) {
-    return std::max(35, std::min(w / 4, (h * 36) / 100));
+    return std::max(35, std::min(w / 4, (h * 31) / 100));
 }
 void drawPlane(TFT_eSPI& t,int cx,int cy,int r) {
     // Top-down stylised airliner, light enough for a 320 x 240 splash.
