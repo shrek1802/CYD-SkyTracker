@@ -1,4 +1,4 @@
-name: Compile CYD firmware
+name: Compile CYD firmware variants
 
 on:
   push:
@@ -12,6 +12,15 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - cyd_2432s028r
+          - cyd_2432s028r_v2
+          - cyd_2432s028r_st7789
+          - cyd_2432s024r
+          - cyd_3248s035r
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,21 +28,21 @@ jobs:
           python-version: '3.11'
       - name: Install PlatformIO
         run: python -m pip install --upgrade platformio
-      - name: Compile
-        run: pio run -e cyd_2432s028r
+      - name: Compile profile
+        run: pio run -e ${{ matrix.target }}
       - name: Enforce OTA partition size limit
         shell: bash
         run: |
-          FILE=.pio/build/cyd_2432s028r/firmware.bin
+          FILE=".pio/build/${{ matrix.target }}/firmware.bin"
           BYTES=$(stat -c%s "$FILE")
-          echo "Firmware size: $BYTES bytes"
+          echo "Board: ${{ matrix.target }}, Firmware size: $BYTES bytes"
           test "$BYTES" -le 1966080
       - name: Save development firmware (NOT A RELEASE)
         uses: actions/upload-artifact@v4
         with:
-          name: skytracker-dev-firmware
+          name: skytracker-dev-${{ matrix.target }}
           path: |
-            .pio/build/cyd_2432s028r/firmware.bin
-            .pio/build/cyd_2432s028r/bootloader.bin
-            .pio/build/cyd_2432s028r/partitions.bin
+            .pio/build/${{ matrix.target }}/firmware.bin
+            .pio/build/${{ matrix.target }}/bootloader.bin
+            .pio/build/${{ matrix.target }}/partitions.bin
           if-no-files-found: error
