@@ -82,8 +82,6 @@ bool TouchPad::readRaw(Point& out) {
 }
 bool TouchPad::sample(int width, int height, int& x, int& y) {
     if (!calibrated_ || width <= 60 || height <= 90) return false;
-    if (millis() - lastSample_ < 25) return false;
-    lastSample_ = millis();
     Point p;
     if (!readRaw(p)) return false;
     const double ax = raw_[1][0] - raw_[0][0];
