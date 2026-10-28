@@ -11,7 +11,8 @@ public:
     ~PhotoView() { clear(); }
     void clear();
     void searching() { status_ = "Searching aircraft photo..."; }
-    void load(const char* registration, const char* type, bool sdReady);
+    void load(const char* registration, const char* type, bool sdReady,
+              bool sdOnly = false);
     void draw(TFT_eSPI& display) const;
     void drawCredit(TFT_eSPI& display) const;
     const String& status() const { return status_; }
@@ -24,4 +25,6 @@ private:
     String source_;
     String model_;
     bool representative_ = false;
+    bool rgbReady_ = false;
+    String rgbPath_;
 };
