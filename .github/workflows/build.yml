@@ -77,3 +77,38 @@ jobs:
             .pio/build/${{ matrix.target }}/bootloader.bin
             .pio/build/${{ matrix.target }}/partitions.bin
           if-no-files-found: error
+
+  display_diagnostics:
+    name: Isolated screen check (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - diag_cyd2usb_st7789
+          - diag_cyd2usb_ili9341
+          - diag_cyd2usb_ili9341_inverted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: python -m pip install platformio
+      - name: Compile isolated display test
+        run: pio run -e ${{ matrix.target }}
+      - name: Name diagnostic application and checksum
+        shell: bash
+        run: |
+          cd ".pio/build/${{ matrix.target }}"
+          cp firmware.bin "display-check-${{ matrix.target }}.bin"
+          sha256sum "display-check-${{ matrix.target }}.bin" > checksum.txt
+          test $(stat -c%s "display-check-${{ matrix.target }}.bin") -le 1966080
+      - name: Upload experimental diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: display-check-${{ matrix.target }}
+          path: |
+            .pio/build/${{ matrix.target }}/display-check-${{ matrix.target }}.bin
+            .pio/build/${{ matrix.target }}/checksum.txt
+          if-no-files-found: error
