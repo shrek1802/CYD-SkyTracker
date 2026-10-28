@@ -22,7 +22,8 @@ currently running firmware. Never install a partial or unsigned download.
 - Minimal CYD screen and phone captive portal (not yet flight tracking).
 - SD mount using the standard 2432S028R pins.
 - Manual USB-serial test command INSTALL_SD, requiring the local files:
-  /updates/firmware.bin and /updates/sha256.txt.
+  /updates/firmware.bin and /updates/sha256.txt, plus a matching
+  /updates/board-id.txt (see hardware compatibility document).
 - Local SHA-256 check and Update.writeStream() to the alternate OTA partition.
 - OTA partition size check in GitHub Actions.
 
@@ -31,6 +32,9 @@ verification, hands-free installation, rollback health verification, aircraft
 map or production release. SHA-256 by itself detects corruption, but does NOT
 establish publisher identity if both the image and checksum can be modified.
 Do not enable unattended firmware updates until signing is in place.
+The current board-ID text file is only an accidental-mismatch guard and
+can be falsified along with the checksum. Future signed metadata must bind
+the exact firmware SHA-256 to the board, SoC and partition layout.
 
 ## GitHub Release plan
 
