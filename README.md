@@ -39,9 +39,9 @@ common ESP32-2432S028R is targeted initially.
 
 - [x] GitHub repository and PlatformIO skeleton
 - [x] CYD screen boot/status page (source added; awaiting CI/hardware test)
-- [x] Phone captive-portal Wi-Fi setup (source added; awaiting test)
+- [x] Phone captive-portal Wi-Fi setup (source added; awaiting test)\n- [x] XPT2046 touchscreen code and calibration (compiled; needs CYD testing)
 - [x] SD mount and manual, SHA-256 checked SD-to-flash OTA code (awaiting test)
-- [ ] Real local map from FAT32 SD card, multiple zoom levels
+- [x] SD RGB565 tile renderer and pan/zoom/home controls (code compiled; pending hardware test)\n- [x] Ubuntu raster MBTiles-to-SD map converter and automated validation (pending final CI checks)
 - [ ] Wi-Fi ADS-B flight positions and aircraft markers
 - [ ] Touch aircraft -> flight details and photo
 - [ ] Postcode-based phone setup, look-direction and distance
@@ -64,7 +64,7 @@ GitHub Actions also compiles each change and saves a **development-only**
 firmware artefact. A successful compile is not a hardware test and does not
 make that image a supported public release.
 
-The current startup page creates a uniquely named setup Wi-Fi hotspot,
+Once Wi-Fi and home coordinates are configured, the current firmware renders offline map tiles from the microSD card. **It does not show live planes yet**. If there are no appropriate tiles, the display shows a missing-map warning.\n\nThe current startup page creates a uniquely named setup Wi-Fi hotspot,
 shows its password on the CYD, and serves a phone configuration page at
 `http://192.168.4.1`. The latitude/longitude fields are temporary until
 postcodes and map selection are implemented.
@@ -81,7 +81,7 @@ have been checked. SHA-256 is an integrity check, not publisher
 authentication. Signed update metadata and safe unattended operation are
 future milestones.
 
-See [hardware/variant compatibility](docs/HARDWARE-COMPATIBILITY.md), [SD update architecture](docs/SD-OTA-DESIGN.md) and
+See [hardware/variant compatibility](docs/HARDWARE-COMPATIBILITY.md), [offline map instructions](docs/OFFLINE-MAPS.md), [SD update architecture](docs/SD-OTA-DESIGN.md) and
 [upstream code research](docs/CODE-RESEARCH.md).
 
 ## How installing will work when released
