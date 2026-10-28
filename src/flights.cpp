@@ -43,6 +43,8 @@ void FlightTracker::begin(double homeLat,double homeLon,int radiusNm) {
     homeLat_ = homeLat; homeLon_ = homeLon;
     radiusNm_ = constrain(radiusNm, 1, 100);
     count_ = 0; selected_ = -1;
+    selectedHex_[0] = 0;
+    trail_.clear();
     hasData_ = false;
     status_ = "Waiting for ADS-B";
     lastPollMs_ = 0;
@@ -117,6 +119,12 @@ bool FlightTracker::poll() {
         copyText(a.flight,sizeof(a.flight),item["flight"] | "");
         copyText(a.registration,sizeof(a.registration),item["r"] | "");
         copyText(a.type,sizeof(a.type),item["t"] | "");
+        // Preserve a tapped aircraft through the next API refresh.
+        // Earlier builds reset selection to -1 every 30 seconds.
+        if (selectedHex_[0] && strcmp(a.hex, selectedHex_) == 0) {
+            selected_ = count_;
+            trail_.append(a.lat, a.lon);
+        }
         a.heading = item["track"] | 0.0f;
         a.speedKt = item["gs"] | -1.0f;
         if (item["alt_baro"].is<int>()) a.altitudeFt = item["alt_baro"].as<int>();
@@ -129,15 +137,24 @@ bool FlightTracker::poll() {
 }
 void FlightTracker::drawMarkers(TFT_eSPI& tft, const MapView& map) const {
     if (!hasData_) return;
+
+    // The trail uses at most 20 positions from the *selected* aircraft,
+    // recorded no closer together than 120m. No large framebuffer needed.
+    if (selected_ >= 0 && trail_.size() > 1) {
+        for (int i = 1; i < trail_.size(); ++i) {
+            int x1=0,y1=0,x2=0,y2=0;
+            const auto& before=trail_.at(i-1);
+            const auto& after=trail_.at(i);
+            if (map.project(before.lat,before.lon,x1,y1) &&
+                map.project(after.lat,after.lon,x2,y2))
+                tft.drawLine(x1,y1,x2,y2,TFT_CYAN);
+        }
+    }
+
     for (int i = 0; i < count_; ++i) {
         int x = 0, y = 0;
         const AircraftRecord& a = records_[i];
         if (!map.project(a.lat, a.lon, x, y)) continue;
-
-        // Clear top-down plane silhouettes, rotated clockwise by actual
-        // ground-track heading. Use the existing altitude colour legend:
-        // cyan = no reported altitude; yellow = below 10,000ft;
-        // white = higher altitude. A black border gives map contrast.
         const uint16_t colour = a.altitudeFt < 0 ? TFT_CYAN :
                                 a.altitudeFt < 10000 ? TFT_YELLOW : TFT_WHITE;
         AircraftIcon::draw(tft, x, y, a.heading, colour, i == selected_);
@@ -151,8 +168,22 @@ bool FlightTracker::selectAt(int x,int y,const MapView& map) {
         int d=(px-x)*(px-x)+(py-y)*(py-y);
         if (d < bestDistance2) {best=i;bestDistance2=d;}
     }
-    selected_=best;
-    return best>=0;
+    if (best < 0) {
+        deselect();
+        return false;
+    }
+    if (strcmp(selectedHex_, records_[best].hex) != 0) {
+        trail_.clear();
+        copyText(selectedHex_, sizeof(selectedHex_), records_[best].hex);
+    }
+    selected_ = best;
+    trail_.append(records_[best].lat, records_[best].lon);
+    return true;
+}
+void FlightTracker::deselect() {
+    selected_ = -1;
+    selectedHex_[0] = 0;
+    trail_.clear();
 }
 void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     if (!hasSelection()) return;
