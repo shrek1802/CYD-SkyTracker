@@ -1,4 +1,5 @@
 #include "sd_update.h"
+#include "board_profile.h"
 
 #include <SD.h>
 #include <FS.h>
@@ -39,6 +40,21 @@ namespace SdUpdate {
 bool installFromCard(const char* binaryPath,
                      const char* sha256Path,
                      String& errorMessage) {
+    // Development-only guard against accidentally using another board's
+    // update. This unsigned marker does NOT authenticate the firmware.
+    File board = SD.open("/updates/board-id.txt", FILE_READ);
+    if (!board) {
+        errorMessage = "Board ID file missing";
+        return false;
+    }
+    String imageBoardId = board.readStringUntil('\n');
+    board.close();
+    imageBoardId.trim();
+    if (imageBoardId != BoardProfile::id()) {
+        errorMessage = "Firmware is for a different CYD model";
+        return false;
+    }
+
     File checksum = SD.open(sha256Path, FILE_READ);
     if (!checksum) {
         errorMessage = "SHA256 file not found";
