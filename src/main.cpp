@@ -10,6 +10,7 @@
 #include "board_profile.h"
 #include "map_view.h"
 #include "touch_pad.h"
+#include "flights.h"
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -22,6 +23,10 @@ TFT_eSPI display;
 SPIClass sdSpi(HSPI);
 MapView mapView;
 TouchPad touch;
+FlightTracker tracker;
+bool detailShowing = false;
+uint32_t lastFlightFetch = 0;
+uint32_t lastWiFiRetry = 0;
 bool mapShowing = false;
 bool touchingLastFrame = false;
 int touchStartX = 0;
@@ -35,6 +40,20 @@ bool sdReady = false;
 String apSsid;
 String apPassword;
 String lastCommand;
+
+void drawRadar() {
+    if (!mapShowing) return;
+    mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
+    tracker.drawMarkers(display, mapView);
+    display.fillRect(110, 0, display.width() > 320 ? 90 : 85, 29, 0x08A3);
+    display.setTextSize(1);
+    display.setTextColor(TFT_YELLOW, 0x08A3);
+    display.setCursor(110, 9);
+    display.printf("%d planes", tracker.count());
+    display.setTextColor(TFT_WHITE, 0x08A3);
+    display.setCursor(5, display.height() - 31);
+    display.print(tracker.status().substring(0, 23));
+}
 
 void statusScreen(const String& heading, const String& line1,
                   const String& line2 = "", const String& line3 = "") {
@@ -144,13 +163,19 @@ void startWifi() {
         delay(150);
     }
     if (WiFi.status() == WL_CONNECTED) {
-        mapView.begin(preferences.getFloat("lat", 0.0f),
-                      preferences.getFloat("lon", 0.0f), 10);
-        mapView.draw(display, sdReady, true);
+        const float lat = preferences.getFloat("lat", 0.0f);
+        const float lon = preferences.getFloat("lon", 0.0f);
+        mapView.begin(lat, lon, 9);
+        tracker.begin(lat, lon, 60);
         mapShowing = true;
         if (!touch.calibrated()) {
-            Serial.println("Touch not calibrated yet. Send CAL_TOUCH over USB serial.");
+            statusScreen("Touch setup", "Tap the 3 crosses", "Touch calibration starting...");
+            delay(600);
+            if (!touch.calibrate(display, preferences)) {
+                Serial.println("Touch setup timed out: use USB serial CAL_TOUCH to retry");
+            }
         }
+        drawRadar();
     } else {
         startSetupPortal();
     }
@@ -173,6 +198,7 @@ void setup() {
     Serial.println("For physical USB-serial test only: type INSTALL_SD to install");
     Serial.println("/updates/firmware.bin with matching /updates/sha256.txt.");
     Serial.println("Type CAL_TOUCH to calibrate the resistive touch screen.");
+    Serial.println("Tap SKYTRACKER at top left to open Wi-Fi setup hotspot.");
 }
 
 void loop() {
@@ -180,20 +206,46 @@ void loop() {
         int x = 0, y = 0;
         const bool pressed = touch.sample(display.width(), display.height(), x, y);
         if (pressed) {
-            touchEndX = x;
-            touchEndY = y;
-            if (!touchingLastFrame) {
-                touchStartX = x;
-                touchStartY = y;
-            }
+            touchEndX = x; touchEndY = y;
+            if (!touchingLastFrame) { touchStartX = x; touchStartY = y; }
         } else if (touchingLastFrame) {
             const int dx = touchEndX - touchStartX;
             const int dy = touchEndY - touchStartY;
-            if (abs(dx) > 22 || abs(dy) > 22) mapView.panPixels(dx, dy);
-            else mapView.tap(touchEndX, touchEndY, display.width(), display.height());
-            mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
+            if (detailShowing) {
+                detailShowing = false;
+                tracker.deselect();
+                drawRadar();
+            } else if (abs(dx) > 22 || abs(dy) > 22) {
+                mapView.panPixels(dx, dy);
+                drawRadar();
+            } else if (touchEndY < 31 && touchEndX < 98) {
+                // On-device Wi-Fi/position setup without USB.
+                mapShowing = false;
+                tracker.deselect();
+                startSetupPortal();
+            } else if (touchEndX >= display.width() - 46 &&
+                       touchEndY >= 32 && touchEndY < 170) {
+                mapView.tap(touchEndX, touchEndY, display.width(), display.height());
+                drawRadar();
+            } else if (tracker.selectAt(touchEndX, touchEndY, mapView)) {
+                detailShowing = true;
+                tracker.drawDetails(display);
+            }
         }
         touchingLastFrame = pressed;
+    }
+    if (mapShowing && millis() - lastFlightFetch > 30000UL) {
+        lastFlightFetch = millis();
+        const bool ok = tracker.poll();
+        Serial.printf("ADS-B: %s (%d aircraft)%s\\n",
+                      tracker.status().c_str(), tracker.count(), ok ? "" : " - retrying");
+        if (detailShowing) tracker.drawDetails(display);
+        else drawRadar();
+    }
+    if (mapShowing && WiFi.status() != WL_CONNECTED &&
+        millis() - lastWiFiRetry > 30000UL) {
+        lastWiFiRetry = millis();
+        WiFi.reconnect();
     }
     if (portalActive) {
         dns.processNextRequest();
@@ -209,7 +261,7 @@ void loop() {
                 } else {
                     Serial.println("Touch calibration cancelled or invalid.");
                 }
-                if (mapShowing) mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
+                if (mapShowing) { detailShowing = false; drawRadar(); }
                 else statusScreen("Touch calibration", touch.calibrated() ? "Calibration saved" : "Calibration failed");
                 touchingLastFrame = false;
             }
