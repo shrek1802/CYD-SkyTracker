@@ -1,6 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+#include "flight_trail.h"
 class MapView;
 
 struct AircraftRecord {
@@ -24,7 +25,7 @@ public:
     void drawMarkers(TFT_eSPI& tft, const MapView& map) const;
     bool selectAt(int x, int y, const MapView& map);
     bool hasSelection() const { return selected_ >= 0 && selected_ < count_; }
-    void deselect() { selected_ = -1; }
+    void deselect();
     void drawDetails(TFT_eSPI& tft) const;
     int count() const { return count_; }
     bool hasData() const { return hasData_; }
@@ -33,6 +34,8 @@ public:
 private:
     AircraftRecord records_[MAX_AIRCRAFT] = {};
     int count_ = 0, selected_ = -1;
+    char selectedHex_[9] = {};
+    FlightTrail trail_;
     double homeLat_ = 0, homeLon_ = 0;
     int radiusNm_ = 60;
     bool hasData_ = false;
