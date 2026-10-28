@@ -1,6 +1,7 @@
 #include "flights.h"
 #include "map_view.h"
 #include "geo.h"
+#include "aircraft_icon_renderer.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -128,19 +129,18 @@ bool FlightTracker::poll() {
 }
 void FlightTracker::drawMarkers(TFT_eSPI& tft, const MapView& map) const {
     if (!hasData_) return;
-    for (int i=0;i<count_;++i) {
-        int x=0,y=0;
-        const AircraftRecord& a=records_[i];
-        if (!map.project(a.lat,a.lon,x,y)) continue;
-        const uint16_t color = a.altitudeFt < 0 ? TFT_CYAN :
-                               a.altitudeFt < 10000 ? TFT_YELLOW : TFT_WHITE;
-        const float angle = (a.heading-90.0f) * (Geo::kPi/180.0);
-        const int noseX=x+int(9*cos(angle)),noseY=y+int(9*sin(angle));
-        tft.drawLine(x-int(5*cos(angle)),y-int(5*sin(angle)),noseX,noseY,color);
-        tft.fillCircle(x,y,3,color);
-        const float wing=angle+Geo::kPi/2.0;
-        tft.drawLine(x-int(5*cos(wing)),y-int(5*sin(wing)),
-                     x+int(5*cos(wing)),y+int(5*sin(wing)),color);
+    for (int i = 0; i < count_; ++i) {
+        int x = 0, y = 0;
+        const AircraftRecord& a = records_[i];
+        if (!map.project(a.lat, a.lon, x, y)) continue;
+
+        // Clear top-down plane silhouettes, rotated clockwise by actual
+        // ground-track heading. Use the existing altitude colour legend:
+        // cyan = no reported altitude; yellow = below 10,000ft;
+        // white = higher altitude. A black border gives map contrast.
+        const uint16_t colour = a.altitudeFt < 0 ? TFT_CYAN :
+                                a.altitudeFt < 10000 ? TFT_YELLOW : TFT_WHITE;
+        AircraftIcon::draw(tft, x, y, a.heading, colour, i == selected_);
     }
 }
 bool FlightTracker::selectAt(int x,int y,const MapView& map) {
