@@ -1,298 +1,305 @@
 #include "photo_view.h"
 #include "photo_match.h"
+#include "aircraft_type_photo.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <SD.h>
 #include <TJpg_Decoder.h>
 #include <cstdlib>
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
 
 namespace {
 constexpr size_t kMaxJpegBytes = 90000;
-constexpr int kX = 7, kY = 39, kW = 150, kH = 99;
+constexpr int kX=7, kY=39, kW=150, kH=99;
 TFT_eSPI* currentDisplay = nullptr;
 
-bool drawJpegBlock(int16_t x, int16_t y, uint16_t w, uint16_t h,
-                   uint16_t* bitmap) {
-    if (!currentDisplay || x >= kX + kW || y >= kY + kH) return false;
-    // The decoder's blocks are generally 8 or 16 pixels wide. The image is
-    // requested at 280px and scaled by 2, keeping it inside the photo panel.
-    const uint16_t visibleRows = uint16_t(std::min<int>(int(h), kY + kH - y));
-    currentDisplay->pushImage(x, y, w, visibleRows, bitmap);
+bool drawJpegBlock(int16_t x,int16_t y,uint16_t w,uint16_t h,uint16_t* bitmap) {
+    if (!currentDisplay || x >= kX+kW || y >= kY+kH) return false;
+    if (x < kX || y < kY) return false;
+    const uint16_t visibleRows = uint16_t(std::min<int>(int(h),kY+kH-y));
+    currentDisplay->pushImage(x,y,w,visibleRows,bitmap);
     return true;
 }
-
 String plainText(const String& html) {
-    String out;
-    out.reserve(82);
-    bool inTag = false;
-    for (size_t i = 0; i < html.length() && out.length() < 77; ++i) {
-        const char ch = html[i];
-        if (ch == '<') { inTag = true; continue; }
-        if (ch == '>') { inTag = false; continue; }
-        if (!inTag && ch >= ' ' && ch <= '~') out += ch;
+    String out;out.reserve(78);
+    bool tag=false;
+    for (size_t i=0;i<html.length()&&out.length()<70;++i) {
+        char c=html[i];
+        if (c=='<') {tag=true;continue;}
+        if (c=='>') {tag=false;continue;}
+        if (!tag && c>=' ' && c<='~') out+=c;
     }
-    out.replace("&amp;", "&");
-    out.replace("&quot;", "'");
-    out.replace("&#39;", "'");
-    out.replace("&nbsp;", " ");
+    out.replace("&amp;","&"); out.replace("&quot;","'");
+    out.replace("&#39;","'"); out.replace("&nbsp;"," ");
     return out;
 }
-
-bool acceptedLicence(const String& licence) {
-    // Credit is still mandatory for BY/BY-SA. Reject unknown/restricted
-    // metadata and non-free licences, even if a search hit matches.
-    String normalised = licence;
-    normalised.trim();
-    normalised.toUpperCase();
-    return normalised == "CC0" || normalised.startsWith("CC0 ") ||
-           normalised == "PUBLIC DOMAIN" || normalised == "PUBLIC DOMAIN MARK" ||
-           normalised.startsWith("CC BY ") || normalised.startsWith("CC BY-SA ") ||
-           normalised.startsWith("CC-BY-") || normalised.startsWith("CC-BY-SA-");
+bool acceptedLicence(String licence) {
+    licence.trim();licence.toUpperCase();
+    return licence=="CC0"||licence.startsWith("CC0 ")||
+           licence=="PUBLIC DOMAIN"||licence.startsWith("PUBLIC DOMAIN")||
+           licence.startsWith("CC BY ")||licence.startsWith("CC BY-SA ")||
+           licence.startsWith("CC-BY-")||licence.startsWith("CC-BY-SA-");
 }
-
-bool validRegistration(const String& registration) {
-    if (registration.length() < 4 || registration.length() > 14) return false;
-    for (unsigned i = 0; i < registration.length(); ++i) {
-        const char c = registration[i];
-        if (!((c >= 'A' && c <= 'Z') ||
-              (c >= '0' && c <= '9') || c == '-')) return false;
+bool allowedImageUrl(const String& url) {
+    return url.startsWith("https://upload.wikimedia.org/")&&url.length()<1024;
+}
+String encode(const String& input) {
+    String out;out.reserve(input.length()*3);
+    char hex[4]={};
+    for(size_t i=0;i<input.length();++i) {
+        unsigned char c=(unsigned char)input[i];
+        if (std::isalnum(c)||c=='-'||c=='_'||c=='.') out+=(char)c;
+        else {snprintf(hex,sizeof(hex),"%%%02X",(unsigned)c);out+=hex;}
+    }
+    return out;
+}
+bool validRegistration(const String& reg) {
+    if(reg.length()<4||reg.length()>14)return false;
+    for(size_t i=0;i<reg.length();++i) {
+        char c=reg[i];
+        if (!((c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='-'))return false;
     }
     return true;
 }
-
-bool allowedImageUrl(const String& url) {
-    // Prevent an API response from causing requests to arbitrary hosts.
-    return url.startsWith("https://upload.wikimedia.org/") &&
-           url.length() < 1024;
+bool photoLooksAppropriate(String title) {
+    title.toLowerCase();
+    static const char* bad[]={"cockpit","interior","cabin","safety card",
+        "seat map","flight deck","logo","diagram","simulation","illustration",
+        "engine detail","museum display","scale model","wing view"};
+    for(const char* word:bad) if(title.indexOf(word)>=0)return false;
+    return true;
 }
 }
 
+// Free the currently displayed photo when exiting the selected aircraft.
 void PhotoView::clear() {
-    if (jpeg_) free(jpeg_);
-    jpeg_ = nullptr;
-    size_ = 0;
-    status_ = "No photo loaded";
-    artist_ = "";
-    licence_ = "";
-    source_ = "";
+    if(jpeg_)free(jpeg_);
+    jpeg_=nullptr;size_=0;artist_="";licence_="";source_="";
+    model_="";representative_=false;status_="No photo loaded";
 }
-
-void PhotoView::load(const char* registration) {
+void PhotoView::load(const char* registration,const char* type,bool sdReady) {
     clear();
-    String reg = registration ? String(registration) : String("");
-    reg.toUpperCase();
-    if (!validRegistration(reg)) {
-        status_ = "No registration";
-        return;
+    const auto* model=AircraftTypePhoto::find(type);
+    String reg=registration?String(registration):String("");
+    reg.toUpperCase();reg.trim();
+    const bool haveReg=validRegistration(reg);
+    if(model) {
+        model_=model->model;
+        representative_=true;
+        Serial.printf("[PHOTO] Type %s -> %s; registration %s\\n",
+            model->code,model->model,haveReg?reg.c_str():"unknown");
     }
-    if (WiFi.status() != WL_CONNECTED) {
-        status_ = "Photo needs Wi-Fi";
-        return;
-    }
-    status_ = "Searching Commons...";
-    Serial.printf("[PHOTO] Looking for %s on Wikimedia Commons\n", reg.c_str());
 
-    // First search the Commons category for this *specific airframe*.
-    // Many correctly identified photos are filed under the registration's
-    // category, but the JPEG filename itself does not mention the registration.
-    // Only fall back to an exact-registration filename search if the category
-    // does not contain a suitable openly licensed JPEG.
+    // Prefer an optional self-contained SD photo package. This is the most
+    // reliable method, and it works without an extra Wikimedia web request.
+    // Every JPEG must have a matching three-line attribution file.
+    if(model&&sdReady) {
+        const String file=String("/aircraft/")+model->code+".jpg";
+        const String meta=String("/aircraft/")+model->code+".txt";
+        File credit=SD.open(meta,FILE_READ);
+        if(credit) {
+            const String artist=credit.readStringUntil('\n');
+            const String license=credit.readStringUntil('\n');
+            const String source=credit.readStringUntil('\n');
+            credit.close();
+            File picture=SD.open(file,FILE_READ);
+            const size_t bytes=picture?picture.size():0;
+            if(picture&&bytes>=16&&bytes<=kMaxJpegBytes&&
+               acceptedLicence(license)&&source.startsWith("https://commons.wikimedia.org/")&&
+               ESP.getFreeHeap()>bytes+40000) {
+                uint8_t* data=(uint8_t*)malloc(bytes);
+                if(data) {
+                    const size_t got=picture.readBytes((char*)data,bytes);
+                    if(got==bytes&&data[0]==0xff&&data[1]==0xd8) {
+                        jpeg_=data;size_=bytes;artist_=artist;licence_=license;
+                        source_=source;status_="Representative type photo";
+                        Serial.printf("[PHOTO] SD type photo loaded %s (%u bytes)\\n",file.c_str(),unsigned(bytes));
+                        picture.close();return;
+                    }
+                    free(data);
+                }
+            }
+            if(picture)picture.close();
+            Serial.printf("[PHOTO] SD type photo unavailable/invalid: %s\\n",file.c_str());
+        }
+    }
+    if(WiFi.status()!=WL_CONNECTED) {
+        status_=model?"Type photo needs Wi-Fi/SD":"No model photo";
+        return;
+    }
+
     String thumbnailUrl;
-    int examined = 0;
-    int regMatches = 0;
-    int jpegMatches = 0;
-    int licenceMatches = 0;
-
-    auto lookup = [&](const String& query, bool category) -> int {
+    bool matchedExact=false;
+    int checked=0;
+    // Result meanings: -1 = HTTP error, 0 = no matches, 1 = valid metadata.
+    auto lookup=[&](const String& query,bool exact,bool category)->int{
         WiFiClientSecure client;
-        // Development/test build: read-only photo metadata (not OTA).
-        // Replace with CA verification before production release.
-        client.setInsecure();
-        client.setTimeout(7500);
+        client.setInsecure(); // public read-only media only; production requires CAs
+        client.setTimeout(7000);
         HTTPClient http;
-        http.setTimeout(7500);
-        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-
-        const String base = "https://commons.wikimedia.org/w/api.php?action=query" +
-            query + "&prop=imageinfo&iiprop=url%7Cextmetadata%7Cmime" +
-            "&iiextmetadatafilter=Artist%7CLicenseShortName" +
+        http.setTimeout(7000);http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+        const String url=String("https://commons.wikimedia.org/w/api.php?action=query")+
+            query+"&prop=imageinfo&iiprop=url%7Cextmetadata%7Cmime"+
+            "&iiextmetadatafilter=Artist%7CLicenseShortName"+
             "&iiurlwidth=280&format=json&formatversion=2";
-        if (!http.begin(client, base)) {
-            status_ = "Commons connection failed";
-            return -1;
+        if(!http.begin(client,url)) {status_="Photo server unavailable";return -1;}
+        http.setUserAgent("CYD-SkyTracker/0.4 (github.com/shrek1802/CYD-SkyTracker)");
+        int code=http.GET();
+        if(code!=HTTP_CODE_OK) {
+            status_=String("Photo server HTTP ")+code;
+            Serial.printf("[PHOTO] Commons metadata HTTP %d\\n",code);
+            http.end();return -1;
         }
-        http.setUserAgent("CYD-SkyTracker/0.3 (github.com/shrek1802/CYD-SkyTracker)");
-        const int code = http.GET();
-        if (code != HTTP_CODE_OK) {
-            status_ = String("Commons HTTP ") + code;
-            Serial.printf("[PHOTO] %s lookup HTTP %d\\n",
-                          category ? "Category" : "Search", code);
-            http.end();
-            return -1;
-        }
-
         JsonDocument filter;
-        JsonObject page = filter["query"]["pages"][0].to<JsonObject>();
-        page["title"] = true;
-        JsonObject image = page["imageinfo"][0].to<JsonObject>();
-        image["mime"] = true;
-        image["thumburl"] = true;
-        image["descriptionurl"] = true;
-        image["extmetadata"]["Artist"]["value"] = true;
-        image["extmetadata"]["LicenseShortName"]["value"] = true;
-
-        JsonDocument data;
-        const DeserializationError err = deserializeJson(
-            data, http.getStream(), DeserializationOption::Filter(filter));
+        JsonObject page=filter["query"]["pages"][0].to<JsonObject>();
+        page["title"]=true;
+        JsonObject info=page["imageinfo"][0].to<JsonObject>();
+        info["mime"]=true;info["thumburl"]=true;info["descriptionurl"]=true;
+        info["extmetadata"]["Artist"]["value"]=true;
+        info["extmetadata"]["LicenseShortName"]["value"]=true;
+        JsonDocument doc;
+        const auto error=deserializeJson(doc,http.getStream(),DeserializationOption::Filter(filter));
         http.end();
-        if (err) {
-            status_ = "Commons JSON error";
-            Serial.printf("[PHOTO] Parse error: %s\\n", err.c_str());
-            return -1;
+        if(error) {
+            status_="Photo metadata error";
+            Serial.printf("[PHOTO] JSON error: %s\\n",error.c_str());return -1;
         }
-
-        JsonArrayConst pages = data["query"]["pages"].as<JsonArrayConst>();
-        for (JsonVariantConst item : pages) {
-            ++examined;
-            const String title = item["title"].as<String>();
-            // Category:G-XXXX (aircraft) itself asserts airframe identity.
-            // Filename-only search requires a complete exact token match.
-            if (!category &&
-                !PhotoMatch::titleHasRegistration(title.c_str(), reg.c_str()))
+        const JsonArrayConst pages=doc["query"]["pages"].as<JsonArrayConst>();
+        int candidates=0;
+        for(JsonVariantConst item:pages) {
+            ++checked;++candidates;
+            const String title=item["title"].as<String>();
+            if(exact&&!category&&!PhotoMatch::titleHasRegistration(title.c_str(),reg.c_str()))
                 continue;
-            ++regMatches;
-            JsonObjectConst info = item["imageinfo"][0].as<JsonObjectConst>();
-            if (info["mime"].as<String>() != "image/jpeg") continue;
-            ++jpegMatches;
-            JsonObjectConst meta = info["extmetadata"].as<JsonObjectConst>();
-            const String lic = meta["LicenseShortName"]["value"].as<String>();
-            if (!acceptedLicence(lic)) continue;
-            ++licenceMatches;
-            const String candidate = info["thumburl"].as<String>();
-            if (!allowedImageUrl(candidate)) continue;
-            thumbnailUrl = candidate;
-            artist_ = plainText(meta["Artist"]["value"].as<String>());
-            if (artist_.isEmpty()) artist_ = "Wikimedia contributor";
-            licence_ = lic;
-            source_ = info["descriptionurl"].as<String>();
-            Serial.printf("[PHOTO] Accepted %s: %s\\n",
-                          category ? "airframe-category" : "filename",
-                          title.c_str());
+            if(!photoLooksAppropriate(title))continue;
+            const JsonObjectConst image=item["imageinfo"][0].as<JsonObjectConst>();
+            if(image["mime"].as<String>()!="image/jpeg")continue;
+            const JsonObjectConst md=image["extmetadata"].as<JsonObjectConst>();
+            String licence=md["LicenseShortName"]["value"].as<String>();
+            if(!acceptedLicence(licence))continue;
+            const String candidate=image["thumburl"].as<String>();
+            if(!allowedImageUrl(candidate))continue;
+            thumbnailUrl=candidate;
+            artist_=plainText(md["Artist"]["value"].as<String>());
+            if(artist_.isEmpty())artist_="Wikimedia contributor";
+            licence_=licence;
+            source_=image["descriptionurl"].as<String>();
+            matchedExact=exact;
+            Serial.printf("[PHOTO] %s photo match: %s | %s\\n",
+                          exact?"Exact airframe":"Representative type",
+                          title.c_str(),licence.c_str());
             return 1;
         }
-        Serial.printf("[PHOTO] %s: candidates=%d, registration=%d,"
-                      " JPEG=%d, open-licence=%d\\n",
-                      category ? "Category" : "Search",
-                      examined, regMatches, jpegMatches, licenceMatches);
+        Serial.printf("[PHOTO] %s candidates %d, accepted 0\\n",category?"Category":"Search",candidates);
         return 0;
     };
-
-    const String catQuery =
-        "&generator=categorymembers&gcmtitle=Category%3A" + reg +
-        "%20%28aircraft%29&gcmnamespace=6&gcmlimit=20";
-    int result = lookup(catQuery, true);
-    if (result == 0) {
-        // Wider than the old title-only query; the complete registration
-        // is still mandatory in the actual file title for a valid match.
-        const String searchQuery = "&generator=search&gsrnamespace=6" 
-            "&gsrlimit=20&gsrsearch=%22" + reg + "%22";
-        result = lookup(searchQuery, false);
-    }
-    if (result <= 0 || thumbnailUrl.isEmpty()) {
-        if (result == 0) {
-            if (regMatches == 0) status_ = "No exact aircraft photo";
-            else if (jpegMatches == 0) status_ = "No JPEG for aircraft";
-            else if (licenceMatches == 0) status_ = "Photo rights unavailable";
-            else status_ = "No supported photo";
+    int result=0;
+    if(model) {
+        // A type-specific Wikimedia Commons category can contain images whose
+        // filenames omit the model entirely. Category membership supplies the
+        // type, so this path does not require an exact filename match.
+        const String catQuery="&generator=categorymembers&gcmtitle="+
+            encode(String("Category:")+model->commonsCategory)+
+            "&gcmnamespace=6&gcmlimit=20";
+        result=lookup(catQuery,false,true);
+        if(result==0) {
+            const String searchQuery="&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch="+
+                encode(String("intitle:\"")+model->model+"\"");
+            result=lookup(searchQuery,false,false);
         }
-        Serial.printf("[PHOTO] %s for %s; seen=%d, reg=%d, jpeg=%d,"
-                      " open-licence=%d\\n", status_.c_str(), reg.c_str(),
-                      examined, regMatches, jpegMatches, licenceMatches);
+    } else if(haveReg) {
+        const String catQuery="&generator=categorymembers&gcmtitle="+
+            encode(String("Category:")+reg+" (aircraft)")+
+            "&gcmnamespace=6&gcmlimit=20";
+        result=lookup(catQuery,true,true);
+        if(result==0) {
+            const String searchQuery="&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch="+
+                encode(String("\"")+reg+"\"");
+            result=lookup(searchQuery,true,false);
+        }
+    }
+    if(thumbnailUrl.isEmpty()) {
+        if(result>=0)status_=model?"No model photo found":"No exact aircraft photo";
+        Serial.printf("[PHOTO] %s (type=%s, reg=%s, examined=%d)\\n",
+                      status_.c_str(),type?type:"",reg.c_str(),checked);
         return;
     }
 
+    // Download one bounded JPEG thumbnail, not an unbounded full-size image.
     WiFiClientSecure imageClient;
-    imageClient.setInsecure();
-    imageClient.setTimeout(6500);
-    HTTPClient imageHttp;
-    imageHttp.setTimeout(6500);
-    imageHttp.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-    if (!imageHttp.begin(imageClient, thumbnailUrl)) {
-        status_ = "Thumbnail connection failed";
-        return;
+    imageClient.setInsecure(); // development only; no executables, settings or OTA
+    imageClient.setTimeout(8000);
+    HTTPClient img;
+    img.setTimeout(8000);img.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+    if(!img.begin(imageClient,thumbnailUrl)) {status_="Photo image connection failed";return;}
+    img.setUserAgent("CYD-SkyTracker/0.4 (github.com/shrek1802/CYD-SkyTracker)");
+    int code=img.GET();
+    int length=img.getSize();
+    Serial.printf("[PHOTO] JPEG download HTTP=%d bytes=%d heap=%u\\n",
+                  code,length,unsigned(ESP.getFreeHeap()));
+    if(code!=HTTP_CODE_OK||length<16||length>int(kMaxJpegBytes)) {
+        status_=length<0?"Photo download length unknown":"Photo download failed";
+        img.end();return;
     }
-    imageHttp.setUserAgent("CYD-SkyTracker/0.2 (https://github.com/shrek1802/CYD-SkyTracker)");
-    const int imageCode = imageHttp.GET();
-    const int contentLength = imageHttp.getSize();
-    if (imageCode != HTTP_CODE_OK || contentLength < 16 ||
-        contentLength > int(kMaxJpegBytes)) {
-        status_ = "Thumbnail unavailable";
-        Serial.printf("[PHOTO] Image HTTP %d length %d\n", imageCode, contentLength);
-        imageHttp.end();
-        return;
+    if(ESP.getFreeHeap()<uint32_t(length+40000)) {
+        status_="Not enough photo RAM";img.end();return;
     }
-    if (ESP.getFreeHeap() < uint32_t(contentLength + 40000)) {
-        status_ = "Not enough photo memory";
-        imageHttp.end();
-        return;
+    uint8_t* buffer=(uint8_t*)malloc(size_t(length));
+    if(!buffer) {status_="Photo allocation failed";img.end();return;}
+    const size_t got=img.getStream().readBytes((char*)buffer,size_t(length));
+    img.end();
+    if(got!=size_t(length)||buffer[0]!=0xff||buffer[1]!=0xd8) {
+        Serial.printf("[PHOTO] Invalid JPEG/short read: %u/%d\\n",unsigned(got),length);
+        free(buffer);status_="Photo JPEG read failed";return;
     }
-    jpeg_ = static_cast<uint8_t*>(malloc(size_t(contentLength)));
-    if (!jpeg_) {
-        status_ = "Photo memory allocation failed";
-        imageHttp.end();
-        return;
-    }
-    const size_t got = imageHttp.getStream().readBytes(jpeg_, size_t(contentLength));
-    imageHttp.end();
-    if (got != size_t(contentLength) ||
-        jpeg_[0] != 0xFF || jpeg_[1] != 0xD8) {
-        status_ = "Unsupported photo data";
-        free(jpeg_);
-        jpeg_ = nullptr;
-        return;
-    }
-    size_ = got;
-    status_ = "Photo available";
-    Serial.printf("[PHOTO] Loaded %u-byte licensed JPEG from Commons\n", unsigned(got));
-    if (source_.length()) Serial.printf("[PHOTO] Photographer/source: %s | %s | %s\n",
-                    artist_.c_str(), licence_.c_str(), source_.c_str());
+    jpeg_=buffer;size_=got;
+    representative_=!matchedExact;
+    status_=representative_?"Representative type photo":"Exact aircraft photo";
+    Serial.printf("[PHOTO] PHOTO READY %u bytes (%s)\\n",unsigned(got),status_.c_str());
+    Serial.printf("[PHOTO] Source: %s | %s | %s\\n",
+                  artist_.c_str(),licence_.c_str(),source_.c_str());
 }
-
-void PhotoView::draw(TFT_eSPI& display) const {
-    display.fillRoundRect(kX - 2, kY - 2, kW + 4, kH + 4, 5, 0x10A4);
-    display.drawRoundRect(kX - 2, kY - 2, kW + 4, kH + 4, 5, TFT_DARKGREY);
-    if (!jpeg_ || !size_) {
-        display.setTextColor(TFT_WHITE, 0x10A4);
-        display.setTextSize(1);
-        display.drawCentreString(status_.substring(0, 23),
-                                 kX + kW/2, kY + kH/2 - 5, 1);
+void PhotoView::draw(TFT_eSPI& tft) const {
+    tft.fillRoundRect(kX-2,kY-2,kW+4,kH+4,5,0x10A4);
+    tft.drawRoundRect(kX-2,kY-2,kW+4,kH+4,5,TFT_DARKGREY);
+    if(!jpeg_||!size_) {
+        tft.setTextColor(TFT_WHITE,0x10A4);
+        tft.setTextSize(1);
+        tft.drawCentreString(status_.substring(0,25),kX+kW/2,kY+kH/2-5,1);
         return;
     }
-    currentDisplay = &display;
+    currentDisplay=&tft;
     TJpgDec.setJpgScale(2);
     TJpgDec.setSwapBytes(true);
     TJpgDec.setCallback(drawJpegBlock);
-    TJpgDec.drawJpg(kX + 1, kY + 1, jpeg_, uint32_t(size_));
-    currentDisplay = nullptr;
+    const int result=TJpgDec.drawJpg(kX+1,kY+1,jpeg_,uint32_t(size_));
+    currentDisplay=nullptr;
+    Serial.printf("[PHOTO] JPEG decode result=%d\\n",result);
+    if(representative_) {
+        tft.fillRect(kX+1,kY+kH-13,kW-2,13,0x08A3);
+        tft.setTextColor(TFT_YELLOW,0x08A3);
+        tft.setCursor(kX+5,kY+kH-10);
+        tft.print("Representative type photo");
+    }
 }
-
-void PhotoView::drawCredit(TFT_eSPI& display) const {
-    display.setTextSize(1);
-    display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.setCursor(7, 184);
-    if (!jpeg_) {
-        display.print("Photo: " + status_);
+void PhotoView::drawCredit(TFT_eSPI& tft) const {
+    tft.setTextSize(1);tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.setCursor(7,184);
+    if(!jpeg_) {
+        tft.print("Photo: "+status_);
         return;
     }
-    display.print("Photo: ");
-    display.setTextColor(TFT_WHITE, TFT_BLACK);
-    display.print(artist_.substring(0, 42));
-    display.setCursor(7, 198);
-    display.setTextColor(TFT_CYAN, TFT_BLACK);
-    display.print(licence_.substring(0, 18) + "  -  Wikimedia Commons");
-    display.setCursor(7, 211);
-    display.setTextColor(TFT_WHITE, TFT_BLACK);
-    display.print("Original link: USB serial [PHOTO]");
+    tft.print(representative_?"Example: ":"Aircraft: ");
+    tft.setTextColor(TFT_WHITE,TFT_BLACK);
+    tft.print(model_.substring(0,34));
+    tft.setCursor(7,198);
+    tft.setTextColor(TFT_CYAN,TFT_BLACK);tft.print("Photo: ");
+    tft.setTextColor(TFT_WHITE,TFT_BLACK);tft.print(artist_.substring(0,38));
+    tft.setCursor(7,211);
+    tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.print(licence_.substring(0,17)+"  Wikimedia Commons");
 }
