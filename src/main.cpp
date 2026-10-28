@@ -237,6 +237,7 @@ void setup() {
     Serial.println("For physical USB-serial test only: type INSTALL_SD to install");
     Serial.println("/updates/firmware.bin with matching /updates/sha256.txt.");
     Serial.println("Type CAL_TOUCH to calibrate the resistive touch screen.");
+    Serial.println("Type PHOTO_TEST to show /aircraft/B738.rgb565 without Wi-Fi or ADS-B.");
     Serial.println("Tap SKYTRACKER at top left to open Wi-Fi setup hotspot.");
 }
 
@@ -317,6 +318,28 @@ void loop() {
                 if (mapShowing) { detailShowing = false; drawRadar(); }
                 else statusScreen("Touch calibration", touch.calibrated() ? "Calibration saved" : "Calibration failed");
                 touchingLastFrame = false;
+            }
+            if (lastCommand == "PHOTO_TEST") {
+                // Deterministic test independent of live aircraft and HTTPS.
+                // Shows whether this CYD reads the SD asset and can paint it.
+                Serial.printf("[PHOTO_TEST] start: SD mounted=%s freeheap=%u\n",
+                              sdReady ? "YES" : "NO", unsigned(ESP.getFreeHeap()));
+                photo.load(nullptr, "B738", sdReady, true);
+                Serial.printf("[PHOTO_TEST] load result: %s\n",photo.status().c_str());
+                display.fillScreen(TFT_BLACK);
+                display.setTextSize(1);
+                display.setTextColor(TFT_CYAN,TFT_BLACK);
+                display.setCursor(7,8);
+                display.print("AIRCRAFT PHOTO SD TEST");
+                photo.draw(display);
+                photo.drawCredit(display);
+                Serial.println("[PHOTO_TEST] screen shown for 8 seconds");
+                delay(8000);
+                photo.clear();
+                if(mapShowing) {
+                    detailShowing = false;
+                    drawRadar();
+                }
             }
             if (lastCommand == "INSTALL_SD") {
                 if (!sdReady) {
