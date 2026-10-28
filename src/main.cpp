@@ -8,6 +8,8 @@
 #include <TFT_eSPI.h>
 #include "sd_update.h"
 #include "board_profile.h"
+#include "map_view.h"
+#include "touch_pad.h"
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -17,7 +19,15 @@ constexpr int SD_MOSI = BoardProfile::sdMosi();
 constexpr int TFT_BL_PIN = BoardProfile::backlightPin();
 Preferences preferences;
 TFT_eSPI display;
-SPIClass sdSpi(VSPI);
+SPIClass sdSpi(HSPI);
+MapView mapView;
+TouchPad touch;
+bool mapShowing = false;
+bool touchingLastFrame = false;
+int touchStartX = 0;
+int touchStartY = 0;
+int touchEndX = 0;
+int touchEndY = 0;
 WebServer web(80);
 DNSServer dns;
 bool portalActive = false;
@@ -134,9 +144,13 @@ void startWifi() {
         delay(150);
     }
     if (WiFi.status() == WL_CONNECTED) {
-        statusScreen("Wi-Fi connected", WiFi.localIP().toString(),
-                     sdReady ? "SD card ready" : "No SD card detected",
-                     "Air traffic screen: coming soon");
+        mapView.begin(preferences.getFloat("lat", 0.0f),
+                      preferences.getFloat("lon", 0.0f), 10);
+        mapView.draw(display, sdReady, true);
+        mapShowing = true;
+        if (!touch.calibrated()) {
+            Serial.println("Touch not calibrated yet. Send CAL_TOUCH over USB serial.");
+        }
     } else {
         startSetupPortal();
     }
@@ -153,13 +167,34 @@ void setup() {
     statusScreen("Starting...", "Initialising microSD");
     sdSpi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
     sdReady = SD.begin(SD_CS, sdSpi, 4000000);
+    touch.begin(preferences);
     startWifi();
     Serial.printf("CYD SkyTracker development build - hardware: %s\n", BoardProfile::id());
     Serial.println("For physical USB-serial test only: type INSTALL_SD to install");
     Serial.println("/updates/firmware.bin with matching /updates/sha256.txt.");
+    Serial.println("Type CAL_TOUCH to calibrate the resistive touch screen.");
 }
 
 void loop() {
+    if (mapShowing && touch.calibrated()) {
+        int x = 0, y = 0;
+        const bool pressed = touch.sample(display.width(), display.height(), x, y);
+        if (pressed) {
+            touchEndX = x;
+            touchEndY = y;
+            if (!touchingLastFrame) {
+                touchStartX = x;
+                touchStartY = y;
+            }
+        } else if (touchingLastFrame) {
+            const int dx = touchEndX - touchStartX;
+            const int dy = touchEndY - touchStartY;
+            if (abs(dx) > 22 || abs(dy) > 22) mapView.panPixels(dx, dy);
+            else mapView.tap(touchEndX, touchEndY, display.width(), display.height());
+            mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
+        }
+        touchingLastFrame = pressed;
+    }
     if (portalActive) {
         dns.processNextRequest();
         web.handleClient();
@@ -168,6 +203,16 @@ void loop() {
         char ch = static_cast<char>(Serial.read());
         if (ch == '\r') continue;
         if (ch == '\n') {
+            if (lastCommand == "CAL_TOUCH") {
+                if (touch.calibrate(display, preferences)) {
+                    Serial.println("Touch calibration saved.");
+                } else {
+                    Serial.println("Touch calibration cancelled or invalid.");
+                }
+                if (mapShowing) mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
+                else statusScreen("Touch calibration", touch.calibrated() ? "Calibration saved" : "Calibration failed");
+                touchingLastFrame = false;
+            }
             if (lastCommand == "INSTALL_SD") {
                 if (!sdReady) {
                     Serial.println("SD card unavailable; update aborted");
