@@ -5,6 +5,7 @@
 namespace {
 constexpr int kTouchCs = 33;
 constexpr int kMargin = 25;
+constexpr int kTopAnchorY = 50;
 constexpr uint32_t kCalTimeoutMs = 16000;
 constexpr int kRawMinimum = 100;
 constexpr int kRawMaximum = 4095;
@@ -55,7 +56,7 @@ bool TouchPad::sample(int width, int height, int& x, int& y) {
     const double sx = (px*by - py*bx) / determinant;
     const double sy = (ax*py - ay*px) / determinant;
     x = constrain(int(std::lround(kMargin + sx * (width - 2*kMargin))), 0, width - 1);
-    y = constrain(int(std::lround(kMargin + sy * (height - 2*kMargin))), 0, height - 1);
+    y = constrain(int(std::lround(kTopAnchorY + sy * (height - kMargin - kTopAnchorY))), 0, height - 1);
     return true;
 }
 
@@ -93,8 +94,8 @@ bool TouchPad::calibrate(TFT_eSPI& tft, Preferences& prefs) {
     const int w = tft.width();
     const int h = tft.height();
     const int points[3][2] = {
-        {kMargin, kMargin + 25},
-        {w - kMargin, kMargin + 25},
+        {kMargin, kTopAnchorY},
+        {w - kMargin, kTopAnchorY},
         {kMargin, h - kMargin}
     };
     // Top cross is 25px lower to keep calibration text readable.
