@@ -273,8 +273,29 @@ void PhotoView::draw(TFT_eSPI& tft) const {
         tft.drawCentreString(status_.substring(0,25),kX+kW/2,kY+kH/2-5,1);
         return;
     }
+    // Wikimedia may serve 330px thumbnails even when 280px was requested.
+    // Scale to the available photo window instead of overpainting the plane
+    // registration/altitude panel on the right of this 320x240 display.
+    uint16_t sourceW=0,sourceH=0;
+    const int probe=TJpgDec.getJpgSize(&sourceW,&sourceH,jpeg_,uint32_t(size_));
+    if(probe!=JDR_OK||!sourceW||!sourceH) {
+        Serial.printf("[PHOTO] JPEG header/decode error=%d\n",probe);
+        tft.setTextColor(TFT_YELLOW,0x10A4);
+        tft.drawCentreString("JPEG decode failed",kX+kW/2,kY+kH/2-5,1);
+        return;
+    }
+    uint8_t scale=1;
+    while(scale<8 &&
+          (int(sourceW)>int(kW-2)*scale||int(sourceH)>int(kH-2)*scale))
+        scale*=2;
+    if(int(sourceW)>int(kW-2)*scale||int(sourceH)>int(kH-2)*scale) {
+        Serial.println("[PHOTO] JPEG is too large for the detail card");
+        return;
+    }
+    Serial.printf("[PHOTO] JPEG source %ux%u, scale %u\n",
+                  unsigned(sourceW),unsigned(sourceH),unsigned(scale));
     currentDisplay=&tft;
-    TJpgDec.setJpgScale(2);
+    TJpgDec.setJpgScale(scale);
     TJpgDec.setSwapBytes(true);
     TJpgDec.setCallback(drawJpegBlock);
     const int result=TJpgDec.drawJpg(kX+1,kY+1,jpeg_,uint32_t(size_));
