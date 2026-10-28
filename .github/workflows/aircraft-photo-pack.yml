@@ -1,0 +1,55 @@
+name: Build openly licensed aircraft type photo SD pack
+
+on:
+  pull_request:
+    paths:
+      - tools/build_aircraft_photo_pack.py
+      - .github/workflows/aircraft-photo-pack.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create_sd_pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Pillow
+        run: python -m pip install 'Pillow>=11,<13'
+      - name: Build photos with attribution from Wikimedia Commons
+        run: |
+          python tools/build_aircraft_photo_pack.py --output /tmp/SkyTracker-Photo-SD
+      - name: Validate image package
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          from io import BytesIO
+          from PIL import Image
+          p=Path('/tmp/SkyTracker-Photo-SD/SkyTracker-Representative-Plane-Photos-SD.zip')
+          with ZipFile(p) as z:
+            assert z.testzip() is None
+            images=[n for n in z.namelist() if n.endswith('.jpg')]
+            assert len(images)>=4
+            for name in images:
+              data=z.read(name)
+              with Image.open(BytesIO(data)) as img:
+                assert img.format=='JPEG'
+                assert img.width<=280 and img.height<=188
+              assert len(data)<90000
+              credit=name[:-4]+'.txt'
+              lines=z.read(credit).decode().splitlines()
+              assert len(lines)>=3 and lines[1] and lines[2].startswith('https://commons.wikimedia.org/')
+            print('VALIDATED',len(images),'SD card type photos')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTracker-Aircraft-Type-Photo-SD-Pack
+          path: /tmp/SkyTracker-Photo-SD/SkyTracker-Representative-Plane-Photos-SD.zip
+          if-no-files-found: error
+          retention-days: 14
