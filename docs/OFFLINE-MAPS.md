@@ -6,7 +6,7 @@ tiles are present on its FAT32 microSD card.
 
 ## Requirements
 
-- Ubuntu / Linux PC, Python 3.10+, Pillow (`python3 -m pip install Pillow`).
+- Ubuntu / Linux PC, Python 3.10+, Pillow (`sudo apt install python3-pil` on Ubuntu).
 - A **raster** `.mbtiles` file containing your desired area and zoom levels,
   legally supplied by a source that **permits offline storage and redistribution
   as applicable**. Supported MBTiles tiles: PNG, JPEG, WebP, 256 × 256 pixels.
@@ -21,7 +21,7 @@ provider, or create your own from licensed vector data. Retain provider attribut
 ## On your Ubuntu desktop
 
 ```bash
-python3 -m pip install --user Pillow
+sudo apt update && sudo apt install -y python3-pil
 
 python3 tools/pack_maps.py \
   --mbtiles /path/to/licensed-local-maps.mbtiles \
