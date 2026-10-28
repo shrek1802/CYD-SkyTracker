@@ -45,6 +45,16 @@ void MapView::tap(int x, int y, int w, int h) {
         centerLon_ = homeLon_;
     }
 }
+bool MapView::project(double lat, double lon, int& x, int& y) const {
+    if (!ready_ || width_ < 100 || bottom_ <= top_) return false;
+    const double centerX = Geo::longitudeToX(centerLon_, zoom_);
+    const double centerY = Geo::latitudeToY(centerLat_, zoom_);
+    const double targetX = Geo::longitudeToX(lon, zoom_);
+    const double targetY = Geo::latitudeToY(lat, zoom_);
+    x = int(std::round(width_ * 0.5 + Geo::wrapDeltaX(targetX - centerX, zoom_)));
+    y = int(std::round((top_ + bottom_) * 0.5 + targetY - centerY));
+    return x >= 8 && x < width_ - 8 && y >= top_ + 8 && y < bottom_ - 8;
+}
 void MapView::drawTiles(TFT_eSPI& tft) {
     const double cx = Geo::longitudeToX(centerLon_, zoom_);
     const double cy = Geo::latitudeToY(centerLat_, zoom_);
@@ -157,6 +167,14 @@ void MapView::draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected) {
     tft.fillScreen(kBg);
     if (sdReady) drawTiles(tft);
     else missingTile(tft, 0, top_, width_, bottom_ - top_, 0, 0);
+    // Air traffic still works when no offline map pack is installed.
+    // Draw a simple grid so relative positions and bearing are visible.
+    if (!sdReady || missing_ > 0) {
+        for (int x=0;x<width_;x+=40)
+            tft.drawFastVLine(x,top_,bottom_-top_,TFT_DARKGREY);
+        for (int y=top_;y<bottom_;y+=40)
+            tft.drawFastHLine(0,y,width_,TFT_DARKGREY);
+    }
 
     // Fixed home marker; it correctly moves when the map is panned.
     const double centerX = Geo::longitudeToX(centerLon_, zoom_);
