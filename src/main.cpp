@@ -242,8 +242,9 @@ void loop() {
             const int dx = touchEndX - touchStartX;
             const int dy = touchEndY - touchStartY;
             if (detailShowing) {
+                // Keep the flight selected on return so its track and outline
+                // remain visible on the map through subsequent ADS-B polls.
                 detailShowing = false;
-                tracker.deselect();
                 drawRadar();
             } else if (abs(dx) > 22 || abs(dy) > 22) {
                 mapView.panPixels(dx, dy);
@@ -269,7 +270,12 @@ void loop() {
         const bool ok = tracker.poll();
         Serial.printf("ADS-B: %s (%d aircraft)%s\\n",
                       tracker.status().c_str(), tracker.count(), ok ? "" : " - retrying");
-        if (detailShowing) tracker.drawDetails(display);
+        if (detailShowing && !tracker.hasSelection()) {
+            // A selected flight may leave the API radius. Return to the
+            // map instead of showing a frozen, no-longer-updating detail page.
+            detailShowing = false;
+            drawRadar();
+        } else if (detailShowing) tracker.drawDetails(display);
         else drawRadar();
     }
     if (mapShowing && WiFi.status() != WL_CONNECTED &&
