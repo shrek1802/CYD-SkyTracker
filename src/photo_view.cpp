@@ -43,8 +43,13 @@ String plainText(const String& html) {
 bool acceptedLicence(const String& licence) {
     // Credit is still mandatory for BY/BY-SA. Reject unknown/restricted
     // metadata and non-free licences, even if a search hit matches.
-    return licence == "CC0" || licence == "Public domain" ||
-           licence.startsWith("CC BY ") || licence.startsWith("CC BY-SA ");
+    String normalised = licence;
+    normalised.trim();
+    normalised.toUpperCase();
+    return normalised == "CC0" || normalised.startsWith("CC0 ") ||
+           normalised == "PUBLIC DOMAIN" || normalised == "PUBLIC DOMAIN MARK" ||
+           normalised.startsWith("CC BY ") || normalised.startsWith("CC BY-SA ") ||
+           normalised.startsWith("CC-BY-") || normalised.startsWith("CC-BY-SA-");
 }
 
 bool validRegistration(const String& registration) {
@@ -89,73 +94,122 @@ void PhotoView::load(const char* registration) {
     status_ = "Searching Commons...";
     Serial.printf("[PHOTO] Looking for %s on Wikimedia Commons\n", reg.c_str());
 
-    WiFiClientSecure client;
-    // Development data-only fetching. Production will use a verified
-    // certificate bundle; never use downloaded content for OTA or settings.
-    client.setInsecure();
-    client.setTimeout(6500);
-    HTTPClient http;
-    http.setTimeout(6500);
-    http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
-    const String url = "https://commons.wikimedia.org/w/api.php?action=query" 
-        "&generator=search&gsrnamespace=6&gsrlimit=5&gsrsearch=intitle%3A%22" +
-        reg + "%22&prop=imageinfo&iiprop=url%7Cextmetadata%7Cmime"
-        "&iiurlwidth=280&format=json&formatversion=2";
-    if (!http.begin(client, url)) {
-        status_ = "Photo search unavailable";
-        return;
-    }
-    http.setUserAgent("CYD-SkyTracker/0.2 (https://github.com/shrek1802/CYD-SkyTracker)");
-    const int code = http.GET();
-    if (code != HTTP_CODE_OK) {
-        status_ = String("Photo search HTTP ") + code;
-        Serial.println("[PHOTO] " + status_);
-        http.end();
-        return;
-    }
-
-    JsonDocument filter;
-    JsonObject page = filter["query"]["pages"][0].to<JsonObject>();
-    page["title"] = true;
-    JsonObject info = page["imageinfo"][0].to<JsonObject>();
-    info["thumburl"] = true;
-    info["descriptionurl"] = true;
-    info["mime"] = true;
-    info["extmetadata"]["Artist"]["value"] = true;
-    info["extmetadata"]["LicenseShortName"]["value"] = true;
-
-    JsonDocument doc;
-    const DeserializationError err = deserializeJson(
-        doc, http.getStream(), DeserializationOption::Filter(filter));
-    http.end();
-    if (err) {
-        status_ = "Photo search JSON error";
-        Serial.printf("[PHOTO] JSON: %s\n", err.c_str());
-        return;
-    }
-
+    // First search the Commons category for this *specific airframe*.
+    // Many correctly identified photos are filed under the registration's
+    // category, but the JPEG filename itself does not mention the registration.
+    // Only fall back to an exact-registration filename search if the category
+    // does not contain a suitable openly licensed JPEG.
     String thumbnailUrl;
-    JsonArrayConst pages = doc["query"]["pages"].as<JsonArrayConst>();
-    for (JsonVariantConst item : pages) {
-        const String title = item["title"].as<String>();
-        if (!PhotoMatch::titleHasRegistration(title.c_str(), reg.c_str())) continue;
-        JsonObjectConst image = item["imageinfo"][0].as<JsonObjectConst>();
-        if (image["mime"].as<String>() != "image/jpeg") continue;
-        JsonObjectConst metadata = image["extmetadata"].as<JsonObjectConst>();
-        const String lic = metadata["LicenseShortName"]["value"].as<String>();
-        if (!acceptedLicence(lic)) continue;
-        const String candidate = image["thumburl"].as<String>();
-        if (!allowedImageUrl(candidate)) continue;
-        thumbnailUrl = candidate;
-        artist_ = plainText(metadata["Artist"]["value"].as<String>());
-        if (artist_.isEmpty()) artist_ = "Wikimedia contributor";
-        licence_ = lic;
-        source_ = image["descriptionurl"].as<String>();
-        break;
+    int examined = 0;
+    int regMatches = 0;
+    int jpegMatches = 0;
+    int licenceMatches = 0;
+
+    auto lookup = [&](const String& query, bool category) -> int {
+        WiFiClientSecure client;
+        // Development/test build: read-only photo metadata (not OTA).
+        // Replace with CA verification before production release.
+        client.setInsecure();
+        client.setTimeout(7500);
+        HTTPClient http;
+        http.setTimeout(7500);
+        http.setFollowRedirects(HTTPC_DISABLE_FOLLOW_REDIRECTS);
+
+        const String base = "https://commons.wikimedia.org/w/api.php?action=query" +
+            query + "&prop=imageinfo&iiprop=url%7Cextmetadata%7Cmime" +
+            "&iiextmetadatafilter=Artist%7CLicenseShortName" +
+            "&iiurlwidth=280&format=json&formatversion=2";
+        if (!http.begin(client, base)) {
+            status_ = "Commons connection failed";
+            return -1;
+        }
+        http.setUserAgent("CYD-SkyTracker/0.3 (github.com/shrek1802/CYD-SkyTracker)");
+        const int code = http.GET();
+        if (code != HTTP_CODE_OK) {
+            status_ = String("Commons HTTP ") + code;
+            Serial.printf("[PHOTO] %s lookup HTTP %d\\n",
+                          category ? "Category" : "Search", code);
+            http.end();
+            return -1;
+        }
+
+        JsonDocument filter;
+        JsonObject page = filter["query"]["pages"][0].to<JsonObject>();
+        page["title"] = true;
+        JsonObject image = page["imageinfo"][0].to<JsonObject>();
+        image["mime"] = true;
+        image["thumburl"] = true;
+        image["descriptionurl"] = true;
+        image["extmetadata"]["Artist"]["value"] = true;
+        image["extmetadata"]["LicenseShortName"]["value"] = true;
+
+        JsonDocument data;
+        const DeserializationError err = deserializeJson(
+            data, http.getStream(), DeserializationOption::Filter(filter));
+        http.end();
+        if (err) {
+            status_ = "Commons JSON error";
+            Serial.printf("[PHOTO] Parse error: %s\\n", err.c_str());
+            return -1;
+        }
+
+        JsonArrayConst pages = data["query"]["pages"].as<JsonArrayConst>();
+        for (JsonVariantConst item : pages) {
+            ++examined;
+            const String title = item["title"].as<String>();
+            // Category:G-XXXX (aircraft) itself asserts airframe identity.
+            // Filename-only search requires a complete exact token match.
+            if (!category &&
+                !PhotoMatch::titleHasRegistration(title.c_str(), reg.c_str()))
+                continue;
+            ++regMatches;
+            JsonObjectConst info = item["imageinfo"][0].as<JsonObjectConst>();
+            if (info["mime"].as<String>() != "image/jpeg") continue;
+            ++jpegMatches;
+            JsonObjectConst meta = info["extmetadata"].as<JsonObjectConst>();
+            const String lic = meta["LicenseShortName"]["value"].as<String>();
+            if (!acceptedLicence(lic)) continue;
+            ++licenceMatches;
+            const String candidate = info["thumburl"].as<String>();
+            if (!allowedImageUrl(candidate)) continue;
+            thumbnailUrl = candidate;
+            artist_ = plainText(meta["Artist"]["value"].as<String>());
+            if (artist_.isEmpty()) artist_ = "Wikimedia contributor";
+            licence_ = lic;
+            source_ = info["descriptionurl"].as<String>();
+            Serial.printf("[PHOTO] Accepted %s: %s\\n",
+                          category ? "airframe-category" : "filename",
+                          title.c_str());
+            return 1;
+        }
+        Serial.printf("[PHOTO] %s: candidates=%d, registration=%d,"
+                      " JPEG=%d, open-licence=%d\\n",
+                      category ? "Category" : "Search",
+                      examined, regMatches, jpegMatches, licenceMatches);
+        return 0;
+    };
+
+    const String catQuery =
+        "&generator=categorymembers&gcmtitle=Category%3A" + reg +
+        "%20%28aircraft%29&gcmnamespace=6&gcmlimit=20";
+    int result = lookup(catQuery, true);
+    if (result == 0) {
+        // Wider than the old title-only query; the complete registration
+        // is still mandatory in the actual file title for a valid match.
+        const String searchQuery = "&generator=search&gsrnamespace=6" 
+            "&gsrlimit=20&gsrsearch=%22" + reg + "%22";
+        result = lookup(searchQuery, false);
     }
-    if (thumbnailUrl.isEmpty()) {
-        status_ = "No freely licensed photo";
-        Serial.printf("[PHOTO] No licensed exact-registration image for %s\n", reg.c_str());
+    if (result <= 0 || thumbnailUrl.isEmpty()) {
+        if (result == 0) {
+            if (regMatches == 0) status_ = "No exact aircraft photo";
+            else if (jpegMatches == 0) status_ = "No JPEG for aircraft";
+            else if (licenceMatches == 0) status_ = "Photo rights unavailable";
+            else status_ = "No supported photo";
+        }
+        Serial.printf("[PHOTO] %s for %s; seen=%d, reg=%d, jpeg=%d,"
+                      " open-licence=%d\\n", status_.c_str(), reg.c_str(),
+                      examined, regMatches, jpegMatches, licenceMatches);
         return;
     }
 
