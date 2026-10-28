@@ -54,7 +54,7 @@ common ESP32-2432S028R is targeted initially.
 This development build is **not suitable as a gift yet**. Work is proposed
 on the `development/sd-ota-foundation` branch.
 
-To compile using [PlatformIO](https://platformio.org/):
+To compile using [PlatformIO](https://platformio.org/) (select the correct board profile):
 
 ```bash
 pio run -e cyd_2432s028r
@@ -74,14 +74,14 @@ postcodes and map selection are implemented.
 The **current test implementation does not download GitHub updates**.
 It supports a *manual USB-serial test command* `INSTALL_SD` after an
 image and its exact SHA-256 digest have been placed on the microSD at
-`/updates/firmware.bin` and `/updates/sha256.txt`.
+`/updates/firmware.bin` and `/updates/sha256.txt`, plus an exact board profile identifier in `/updates/board-id.txt`.
 
 Do **not** attempt this until the build and hardware/rollback behaviour
 have been checked. SHA-256 is an integrity check, not publisher
 authentication. Signed update metadata and safe unattended operation are
 future milestones.
 
-See [SD update architecture](docs/SD-OTA-DESIGN.md) and
+See [hardware/variant compatibility](docs/HARDWARE-COMPATIBILITY.md), [SD update architecture](docs/SD-OTA-DESIGN.md) and
 [upstream code research](docs/CODE-RESEARCH.md).
 
 ## How installing will work when released
