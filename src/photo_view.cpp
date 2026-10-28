@@ -14,6 +14,9 @@
 
 namespace {
 constexpr size_t kMaxJpegBytes = 90000;
+// A 144x96 little-endian RGB565 model image is a fixed 27,648-byte stream.
+constexpr int kRawW = 144, kRawH = 96;
+constexpr size_t kRawBytes = size_t(kRawW) * size_t(kRawH) * 2;
 constexpr int kX=7, kY=39, kW=150, kH=99;
 TFT_eSPI* currentDisplay = nullptr;
 
@@ -82,9 +85,11 @@ bool photoLooksAppropriate(String title) {
 void PhotoView::clear() {
     if(jpeg_)free(jpeg_);
     jpeg_=nullptr;size_=0;artist_="";licence_="";source_="";
-    model_="";representative_=false;status_="No photo loaded";
+    model_="";representative_=false;rgbReady_=false;rgbPath_="";
+    status_="No photo loaded";
 }
-void PhotoView::load(const char* registration,const char* type,bool sdReady) {
+void PhotoView::load(const char* registration,const char* type,
+                     bool sdReady,bool sdOnly) {
     clear();
     const auto* model=AircraftTypePhoto::find(type);
     String reg=registration?String(registration):String("");
@@ -95,6 +100,40 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
         representative_=true;
         Serial.printf("[PHOTO] Type %s -> %s; registration %s\n",
             model->code,model->model,haveReg?reg.c_str():"unknown");
+    }
+
+    // Direct RGB565: pre-rendered on a computer, identical display format
+    // to /maps/*.rgb565. Exact size and credit required; no decoder involved.
+    if(model&&sdReady) {
+        const String imagePath=String("/aircraft/")+model->code+".rgb565";
+        const String creditPath=String("/aircraft/")+model->code+".txt";
+        File attribution=SD.open(creditPath,FILE_READ);
+        if(attribution) {
+            String artist=attribution.readStringUntil('\n');
+            String license=attribution.readStringUntil('\n');
+            String source=attribution.readStringUntil('\n');
+            attribution.close();
+            artist.trim();license.trim();source.trim();
+            File pixelFile=SD.open(imagePath,FILE_READ);
+            const size_t fileBytes=pixelFile?pixelFile.size():0;
+            Serial.printf("[PHOTO] SD RGB565 %s: %s, %u bytes, licensed=%d\n",
+                imagePath.c_str(),pixelFile?"present":"missing",
+                unsigned(fileBytes),acceptedLicence(license)?1:0);
+            if(pixelFile&&fileBytes==kRawBytes&&acceptedLicence(license)&&
+               source.startsWith("https://commons.wikimedia.org/")) {
+                rgbReady_=true;
+                rgbPath_=imagePath;
+                artist_=artist;licence_=license;source_=source;
+                status_="Representative type photo";
+                representative_=true;
+                pixelFile.close();
+                Serial.printf("[PHOTO_TEST] SD RGB565 READY %s\n",imagePath.c_str());
+                return;
+            }
+            if(pixelFile)pixelFile.close();
+        } else {
+            Serial.printf("[PHOTO] Missing SD attribution: %s\n",creditPath.c_str());
+        }
     }
 
     // Prefer an optional self-contained SD photo package. This is the most
@@ -129,6 +168,12 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
             if(picture)picture.close();
             Serial.printf("[PHOTO] SD type photo unavailable/invalid: %s\n",file.c_str());
         }
+    }
+    if(sdOnly) {
+        status_ = sdReady ? "SD RGB565 photo missing" : "SD card not mounted";
+        Serial.printf("[PHOTO_TEST] %s, model=%s\n",
+                      status_.c_str(), model?model->code:"unknown");
+        return;
     }
     if(WiFi.status()!=WL_CONNECTED) {
         status_=model?"Type photo needs Wi-Fi/SD":"No model photo";
@@ -268,6 +313,36 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
 void PhotoView::draw(TFT_eSPI& tft) const {
     tft.fillRoundRect(kX-2,kY-2,kW+4,kH+4,5,0x10A4);
     tft.drawRoundRect(kX-2,kY-2,kW+4,kH+4,5,TFT_DARKGREY);
+
+    if(rgbReady_) {
+        File raw=SD.open(rgbPath_,FILE_READ);
+        if (!raw || raw.size()!=kRawBytes) {
+            Serial.printf("[PHOTO] RGB565 file unavailable: %s\n",rgbPath_.c_str());
+            tft.setTextColor(TFT_YELLOW,0x10A4);
+            tft.drawCentreString("SD image missing",kX+kW/2,kY+kH/2-5,1);
+            if(raw)raw.close();
+            return;
+        }
+        // Identical byte order and TFT_eSPI row path as our offline maps.
+        // No JPEG decoder, heap allocation, or Wi-Fi image request at draw time.
+        static uint16_t pixels[kRawW];
+        bool ok=true;
+        for(int row=0;row<kRawH;++row) {
+            const size_t bytes=raw.read(reinterpret_cast<uint8_t*>(pixels),kRawW*2);
+            if(bytes!=size_t(kRawW*2)) {ok=false;break;}
+            tft.pushImage(kX+3,kY+1+row,kRawW,1,pixels);
+        }
+        raw.close();
+        Serial.printf("[PHOTO] RGB565 drawing: %s, %d rows\n",
+                      ok?"PASS":"SHORT READ",kRawH);
+        if(representative_) {
+            tft.fillRect(kX+1,kY+kH-13,kW-2,13,0x08A3);
+            tft.setTextColor(TFT_YELLOW,0x08A3);
+            tft.setCursor(kX+5,kY+kH-10);
+            tft.print("Representative type photo");
+        }
+        return;
+    }
     if(!jpeg_||!size_) {
         tft.setTextColor(TFT_WHITE,0x10A4);
         tft.setTextSize(1);
@@ -312,7 +387,7 @@ void PhotoView::draw(TFT_eSPI& tft) const {
 void PhotoView::drawCredit(TFT_eSPI& tft) const {
     tft.setTextSize(1);tft.setTextColor(TFT_CYAN,TFT_BLACK);
     tft.setCursor(7,184);
-    if(!jpeg_) {
+    if(!jpeg_&&!rgbReady_) {
         tft.print("Photo: "+status_);
         return;
     }
