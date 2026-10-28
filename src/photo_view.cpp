@@ -70,7 +70,9 @@ bool photoLooksAppropriate(String title) {
     title.toLowerCase();
     static const char* bad[]={"cockpit","interior","cabin","safety card",
         "seat map","flight deck","logo","diagram","simulation","illustration",
-        "engine detail","museum display","scale model","wing view"};
+        "engine detail","museum display","scale model","wing view",
+        "gear bay","passagierbereich","hangar","contrail","sunspot",
+        "winglet","tail of","sunset","moon","hold előtt"};
     for(const char* word:bad) if(title.indexOf(word)>=0)return false;
     return true;
 }
@@ -200,17 +202,16 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
     };
     int result=0;
     if(model) {
-        // A type-specific Wikimedia Commons category can contain images whose
-        // filenames omit the model entirely. Category membership supplies the
-        // type, so this path does not require an exact filename match.
-        const String catQuery="&generator=categorymembers&gcmtitle="+
-            encode(String("Category:")+model->commonsCategory)+
-            "&gcmnamespace=6&gcmlimit=20";
-        result=lookup(catQuery,false,true);
+        // Search named model photos first: category lists sometimes begin
+        // with cabin interiors, wings or aircraft lost in the distance.
+        const String searchQuery="&generator=search&gsrnamespace=6&gsrlimit=20&gsrsearch="+
+            encode(String("intitle:\"")+model->model+"\"");
+        result=lookup(searchQuery,false,false);
         if(result==0) {
-            const String searchQuery="&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch="+
-                encode(String("intitle:\"")+model->model+"\"");
-            result=lookup(searchQuery,false,false);
+            const String catQuery="&generator=categorymembers&gcmtitle="+
+                encode(String("Category:")+model->commonsCategory)+
+                "&gcmnamespace=6&gcmlimit=20";
+            result=lookup(catQuery,false,true);
         }
     } else if(haveReg) {
         const String catQuery="&generator=categorymembers&gcmtitle="+
