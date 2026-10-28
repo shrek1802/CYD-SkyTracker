@@ -55,10 +55,17 @@ uint16_t TouchPad::transfer16(uint16_t v) {
 }
 uint16_t TouchPad::measure(uint8_t command) {
     digitalWrite(kTouchCs, LOW);
-    // XPT2046 transmits 8-bit command then 12-bit result in 16-bit frame.
-    // Keeping select low for the command and result avoids bus interference.
-    uint16_t commandResponse = transfer16(uint16_t(command) << 8);
-    (void)commandResponse;
+    // Eight command clocks immediately followed by a 16-bit sample.
+    // Sending command as a 16-bit transfer would discard the leading
+    // half of the response and produce meaningless touch coordinates.
+    for (int bit = 7; bit >= 0; --bit) {
+        digitalWrite(kTouchClk, LOW);
+        digitalWrite(kTouchMosi, (command & (1u << bit)) ? HIGH : LOW);
+        delayMicroseconds(1);
+        digitalWrite(kTouchClk, HIGH);
+        delayMicroseconds(1);
+    }
+    digitalWrite(kTouchClk, LOW);
     uint16_t value = transfer16(0);
     digitalWrite(kTouchCs, HIGH);
     return (value >> 3) & 0x0FFF;
