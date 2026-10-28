@@ -7,13 +7,14 @@
 #include <SD.h>
 #include <TFT_eSPI.h>
 #include "sd_update.h"
+#include "board_profile.h"
 
 namespace {
-constexpr int SD_CS = 5;
-constexpr int SD_SCK = 18;
-constexpr int SD_MISO = 19;
-constexpr int SD_MOSI = 23;
-constexpr int TFT_BL_PIN = 21;
+constexpr int SD_CS = BoardProfile::sdCs();
+constexpr int SD_SCK = BoardProfile::sdClk();
+constexpr int SD_MISO = BoardProfile::sdMiso();
+constexpr int SD_MOSI = BoardProfile::sdMosi();
+constexpr int TFT_BL_PIN = BoardProfile::backlightPin();
 Preferences preferences;
 TFT_eSPI display;
 SPIClass sdSpi(VSPI);
@@ -32,7 +33,7 @@ void statusScreen(const String& heading, const String& line1,
     display.setTextSize(2);
     display.setCursor(8, 10);
     display.println("CYD SKYTRACKER");
-    display.drawFastHLine(8, 37, 304, TFT_DARKGREY);
+    display.drawFastHLine(8, 37, display.width() - 16, TFT_DARKGREY);
     display.setTextColor(TFT_WHITE, TFT_BLACK);
     display.setTextSize(2);
     display.setCursor(8, 53);
@@ -44,9 +45,12 @@ void statusScreen(const String& heading, const String& line1,
     display.println(line2);
     display.setCursor(8, 148);
     display.println(line3);
-    display.setCursor(8, 212);
+    display.setCursor(8, display.height() - 26);
     display.setTextColor(TFT_ORANGE, TFT_BLACK);
     display.println("DEVELOPMENT BUILD - NO RADAR YET");
+    display.setCursor(8, display.height() - 12);
+    display.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    display.println(BoardProfile::id());
 }
 
 String configPage() {
@@ -150,7 +154,7 @@ void setup() {
     sdSpi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
     sdReady = SD.begin(SD_CS, sdSpi, 4000000);
     startWifi();
-    Serial.println("CYD SkyTracker development build.");
+    Serial.printf("CYD SkyTracker development build - hardware: %s\n", BoardProfile::id());
     Serial.println("For physical USB-serial test only: type INSTALL_SD to install");
     Serial.println("/updates/firmware.bin with matching /updates/sha256.txt.");
 }
