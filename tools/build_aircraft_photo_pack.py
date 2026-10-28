@@ -86,13 +86,19 @@ def good_filename(name):
 
 
 def select(pages):
-    for page in pages:
+    print('  API returned',len(pages),'candidate pages',flush=True)
+    for index,page in enumerate(pages):
         if not good_filename(page.get("title", "")):
             continue
         for image in page.get("imageinfo", []):
             lic = image.get("extmetadata", {}).get(
                 "LicenseShortName", {}).get("value", "")
             u = image.get("thumburl", "")
+            if index<2:
+                print('  candidate',repr(page.get("title","")[:65]),
+                      'mime=',image.get("mime"),'license=',repr(lic),
+                      'thumb=',repr(u[:90]),
+                      'source=',repr(image.get("descriptionurl","")[:80]),flush=True)
             if (image.get("mime") != "image/jpeg" or
                 not acceptable(lic) or not
                 u.startswith("https://upload.wikimedia.org/")):
@@ -104,6 +110,7 @@ def select(pages):
             artist = cleaner.get() or "Wikimedia contributor"
             source = image.get("descriptionurl", "")
             if not source.startswith("https://commons.wikimedia.org/"):
+                print("  rejected source",repr(source[:120]),flush=True)
                 continue
             return {
                 "title": page.get("title", ""), "url": u, "licence": lic,
