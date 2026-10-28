@@ -90,7 +90,7 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
     if(model) {
         model_=model->model;
         representative_=true;
-        Serial.printf("[PHOTO] Type %s -> %s; registration %s\\n",
+        Serial.printf("[PHOTO] Type %s -> %s; registration %s\n",
             model->code,model->model,haveReg?reg.c_str():"unknown");
     }
 
@@ -117,14 +117,14 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
                     if(got==bytes&&data[0]==0xff&&data[1]==0xd8) {
                         jpeg_=data;size_=bytes;artist_=artist;licence_=license;
                         source_=source;status_="Representative type photo";
-                        Serial.printf("[PHOTO] SD type photo loaded %s (%u bytes)\\n",file.c_str(),unsigned(bytes));
+                        Serial.printf("[PHOTO] SD type photo loaded %s (%u bytes)\n",file.c_str(),unsigned(bytes));
                         picture.close();return;
                     }
                     free(data);
                 }
             }
             if(picture)picture.close();
-            Serial.printf("[PHOTO] SD type photo unavailable/invalid: %s\\n",file.c_str());
+            Serial.printf("[PHOTO] SD type photo unavailable/invalid: %s\n",file.c_str());
         }
     }
     if(WiFi.status()!=WL_CONNECTED) {
@@ -151,7 +151,7 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
         int code=http.GET();
         if(code!=HTTP_CODE_OK) {
             status_=String("Photo server HTTP ")+code;
-            Serial.printf("[PHOTO] Commons metadata HTTP %d\\n",code);
+            Serial.printf("[PHOTO] Commons metadata HTTP %d\n",code);
             http.end();return -1;
         }
         JsonDocument filter;
@@ -166,7 +166,7 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
         http.end();
         if(error) {
             status_="Photo metadata error";
-            Serial.printf("[PHOTO] JSON error: %s\\n",error.c_str());return -1;
+            Serial.printf("[PHOTO] JSON error: %s\n",error.c_str());return -1;
         }
         const JsonArrayConst pages=doc["query"]["pages"].as<JsonArrayConst>();
         int candidates=0;
@@ -189,12 +189,12 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
             licence_=licence;
             source_=image["descriptionurl"].as<String>();
             matchedExact=exact;
-            Serial.printf("[PHOTO] %s photo match: %s | %s\\n",
+            Serial.printf("[PHOTO] %s photo match: %s | %s\n",
                           exact?"Exact airframe":"Representative type",
                           title.c_str(),licence.c_str());
             return 1;
         }
-        Serial.printf("[PHOTO] %s candidates %d, accepted 0\\n",category?"Category":"Search",candidates);
+        Serial.printf("[PHOTO] %s candidates %d, accepted 0\n",category?"Category":"Search",candidates);
         return 0;
     };
     int result=0;
@@ -224,7 +224,7 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
     }
     if(thumbnailUrl.isEmpty()) {
         if(result>=0)status_=model?"No model photo found":"No exact aircraft photo";
-        Serial.printf("[PHOTO] %s (type=%s, reg=%s, examined=%d)\\n",
+        Serial.printf("[PHOTO] %s (type=%s, reg=%s, examined=%d)\n",
                       status_.c_str(),type?type:"",reg.c_str(),checked);
         return;
     }
@@ -239,7 +239,7 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
     img.setUserAgent("CYD-SkyTracker/0.4 (github.com/shrek1802/CYD-SkyTracker)");
     int code=img.GET();
     int length=img.getSize();
-    Serial.printf("[PHOTO] JPEG download HTTP=%d bytes=%d heap=%u\\n",
+    Serial.printf("[PHOTO] JPEG download HTTP=%d bytes=%d heap=%u\n",
                   code,length,unsigned(ESP.getFreeHeap()));
     if(code!=HTTP_CODE_OK||length<16||length>int(kMaxJpegBytes)) {
         status_=length<0?"Photo download length unknown":"Photo download failed";
@@ -253,14 +253,14 @@ void PhotoView::load(const char* registration,const char* type,bool sdReady) {
     const size_t got=img.getStream().readBytes((char*)buffer,size_t(length));
     img.end();
     if(got!=size_t(length)||buffer[0]!=0xff||buffer[1]!=0xd8) {
-        Serial.printf("[PHOTO] Invalid JPEG/short read: %u/%d\\n",unsigned(got),length);
+        Serial.printf("[PHOTO] Invalid JPEG/short read: %u/%d\n",unsigned(got),length);
         free(buffer);status_="Photo JPEG read failed";return;
     }
     jpeg_=buffer;size_=got;
     representative_=!matchedExact;
     status_=representative_?"Representative type photo":"Exact aircraft photo";
-    Serial.printf("[PHOTO] PHOTO READY %u bytes (%s)\\n",unsigned(got),status_.c_str());
-    Serial.printf("[PHOTO] Source: %s | %s | %s\\n",
+    Serial.printf("[PHOTO] PHOTO READY %u bytes (%s)\n",unsigned(got),status_.c_str());
+    Serial.printf("[PHOTO] Source: %s | %s | %s\n",
                   artist_.c_str(),licence_.c_str(),source_.c_str());
 }
 void PhotoView::draw(TFT_eSPI& tft) const {
@@ -278,7 +278,7 @@ void PhotoView::draw(TFT_eSPI& tft) const {
     TJpgDec.setCallback(drawJpegBlock);
     const int result=TJpgDec.drawJpg(kX+1,kY+1,jpeg_,uint32_t(size_));
     currentDisplay=nullptr;
-    Serial.printf("[PHOTO] JPEG decode result=%d\\n",result);
+    Serial.printf("[PHOTO] JPEG decode result=%d\n",result);
     if(representative_) {
         tft.fillRect(kX+1,kY+kH-13,kW-2,13,0x08A3);
         tft.setTextColor(TFT_YELLOW,0x08A3);
