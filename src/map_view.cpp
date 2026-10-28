@@ -129,14 +129,30 @@ void MapView::drawUi(TFT_eSPI& tft, bool wifiConnected, bool sdReady, int missin
     tft.setCursor(5, bottom_ + 6);
     tft.setTextColor(TFT_WHITE, kPanel);
     if (!sdReady) tft.print("Insert FAT32 SD card with /maps/");
-    else if (missingCount) tft.printf("%d map tile(s) missing at zoom %u", missingCount, unsigned(zoom_));
-    else tft.print("Local map from SD card - development build");
+    else if (missingCount) tft.printf("%d tile(s) missing at zoom %u", missingCount, unsigned(zoom_));
+    else tft.print("Local map - development build");
+    // Always show attribution on the device when a provider has supplied it.
+    // Read at most 75 bytes, avoiding unbounded SD file/string allocations.
+    if (sdReady) {
+        File attribution = SD.open("/maps/attribution.txt", FILE_READ);
+        tft.setCursor(5, bottom_ + 19);
+        tft.setTextColor(TFT_CYAN, kPanel);
+        if (attribution) {
+            char line[76] = {};
+            const size_t n = attribution.readBytesUntil('\\n', line, sizeof(line)-1);
+            line[n] = 0;
+            attribution.close();
+            tft.print(String(line).substring(0, (width_ - 10) / 6));
+        } else {
+            tft.print("Map source attribution not supplied");
+        }
+    }
 }
 void MapView::draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected) {
     if (!ready_) return;
     width_ = tft.width();
     top_ = 32;
-    bottom_ = tft.height() - 22;
+    bottom_ = tft.height() - 32;
     missing_ = 0;
     tft.fillScreen(kBg);
     if (sdReady) drawTiles(tft);
