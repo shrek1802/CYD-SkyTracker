@@ -1,51 +1,72 @@
-# Troubleshooting: white screen on dual-USB CYD
+# White screen / black line on the 2USB CYD
 
-The 2.8-inch ESP32-2432S028/CYD2USB (USB-C + micro-USB) ships with
-**more than one display controller**. The number and type of USB ports do
-not identify the controller. The backlight may remain white if the wrong
-TFT driver was flashed, even if the ESP32 successfully connects to Wi-Fi.
+Symptoms: after phone Wi-Fi setup the CYD screen is white with a black line,
+including when using both ST7789 and ILI9341 SkyTracker full-firmware variants.
 
-## Triage
+**Do not assume a damaged display or keep factory-flashing different images.**
 
-1. Does the SkyTracker logo appear **at any point**, or is the LCD fully
-   white from power-on?
-2. Did the installer use the `cyd_2432s028r_st7789` profile?
-3. If the splash has **never** appeared, use the ILI9341 v2 profile
-   (`cyd_2432s028r_v2`) next; many dual-USB boards use ILI9341.
-4. If the splash **does** appear and later goes white, do not blindly
-   switch drivers. Capture the 115200 baud serial log because the issue
-   could be SD/touch startup, Wi-Fi or a reset.
-5. If the alternative still fails, try the classic ILI9341 profile only
-   after reviewing the display/backlight configuration; v2 currently
-   shares most display driver settings with classic ILI9341.
+## First: capture the USB serial log without reflashing
 
-### Preserve saved Wi-Fi when switching panel profiles
-
-For a device that was **already factory-flashed with SkyTracker's first
-test firmware and standard 4MB min_spiffs partition scheme**: flash a
-matching app-only `firmware.bin` to **0x10000**, NOT the all-in-one
-factory image. This preserves the NVS configuration partition, including
-Wi-Fi information. This is only valid before a subsequent OTA update has
-switched the active app partition, and only with the expected layout.
-
-From the extracted hardware-specific GitHub Actions ZIP:
-
+From Ubuntu:
 ```bash
-# Replace /dev/ttyUSB0 with the actual USB serial port.
-~/.local/share/cyd-skytracker/esptool-venv/bin/python \
-  -m esptool --chip esp32 --port /dev/ttyUSB0 \
-  --baud 460800 write_flash 0x10000 firmware.bin
+sudo apt install -y python3-serial
+ls /dev/serial/by-id/* /dev/ttyUSB* /dev/ttyACM* 2>/dev/null
+python3 -m serial.tools.miniterm /dev/ttyUSB0 115200
 ```
 
-Use `esptool` installed through the existing Ubuntu flash script.
-If the above assumptions are unknown, identify the current flash/OTA
-layout first instead of blindly overwriting the application.
+Use the actual port. Press the CYD's RESET button while the terminal is open,
+then copy the output (redact saved Wi-Fi passwords or location information).
+Exit miniterm with **Ctrl+]**.
 
-**Do not post SSIDs, Wi-Fi passwords, home coordinates or full MAC
-addresses in public issues or logs.**
+Pay special attention to reset reason, Guru Meditation errors, memory errors,
+or whether code reaches the line `CYD SkyTracker development build - hardware:`.
+A black line with a white screen alone does **not** prove a driver mismatch.
 
-References:
+## Isolated hardware test
 
-- [CYD community troubleshooting](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/blob/main/TROUBLESHOOTING.md)
-- [ST7789 CYD panel and alternative ILI9341 variant](https://lcdwizard.com/boards/cyd-2432s028r-st7789)
-- [White screen from wrong controller](https://www.nmminer.com/2025/12/01/flash-correct-nmminer-to-cyd/)
+The repository builds 3 *small display-only diagnostics*:
+
+- `diag_cyd2usb_st7789`: ST7789, BGR, inversion OFF
+- `diag_cyd2usb_ili9341`: ILI9341, BGR, inversion OFF
+- `diag_cyd2usb_ili9341_inverted`: ILI9341, inversion ON
+
+They deliberately omit Wi-Fi, ADS-B, SD, map and touch code. Each cycles red,
+green, blue, black and white approximately every 2.7 seconds. Black and white
+frames also show geometric outlines and “CYD DISPLAY TEST”.
+
+The tests use the known 2USB Sunton display pins:
+**SCK14, MOSI13, MISO12, CS15, DC2, backlight21**, and enable
+TFT_eSPI's HSPI option at a conservative **27MHz** for initial diagnosis.
+
+If none of the three show colours/text but USB serial messages report
+changing phases, suspect the actual panel/pin variant, screen ribbon
+connection, incorrect SPI init/power, or a damaged panel. Do not infer the
+panel from USB port count alone.
+
+## Safe test flashing
+
+**These `.bin` files are application-only; they are NOT initial-install
+factory images.** Only use after the SkyTracker full factory image has
+installed a compatible `min_spiffs.csv` partition layout.
+
+For a board originally installed with our 4MB SkyTracker factory image, the
+application in OTA slot 0 is at offset **0x10000**. Flashing just that offset
+preserves NVS (including configured Wi-Fi), but prevents SkyTracker from running
+until the original full application is restored.
+
+If bootloader OTA selection currently points to a different OTA slot, writing
+0x10000 might **not** activate the test. Check the ESP32 boot log first.
+
+Use the diagnostic flashing script shipped with the test bundle.
+Never erase flash or overwrite the partition table during this test.
+
+## Result to report
+
+1. Did any colour or text appear in **ST7789** or **ILI9341** diagnostic?
+2. Does the black line stay in the same position?
+3. Copy serial output at 115200 baud, especially reset errors and the
+   diagnostic's `DIAG: phase=` messages.
+4. Identify the exact printed PCB text and USB ports.
+
+Once one display-only test works, copy its TFT_eSPI hardware flags into
+the matching SkyTracker profile, then test SD/touch/Wi-Fi incrementally.
