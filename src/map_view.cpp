@@ -139,7 +139,7 @@ void MapView::drawUi(TFT_eSPI& tft, bool wifiConnected, bool sdReady, int missin
         tft.setTextColor(TFT_CYAN, kPanel);
         if (attribution) {
             char line[76] = {};
-            const size_t n = attribution.readBytesUntil('\\n', line, sizeof(line)-1);
+            const size_t n = attribution.readBytesUntil('\n', line, sizeof(line)-1);
             line[n] = 0;
             attribution.close();
             tft.print(String(line).substring(0, (width_ - 10) / 6));
