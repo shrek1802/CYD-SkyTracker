@@ -1,23 +1,24 @@
 #pragma once
 #include <Arduino.h>
-#include <SPI.h>
 #include <Preferences.h>
 #include <TFT_eSPI.h>
-#include <XPT2046_Touchscreen.h>
 
-// XPT2046 resistive touch for the initial five Sunton SPI-board profiles.
-// Other touchscreen types must implement the same sample() API separately.
+// Shared XPT2046 touch abstraction for resistive Sunton CYDs.
+// Software SPI avoids resetting the hardware SPI bus used by TFT or SD.
+// Other capacitive touch variants will use a separate driver in future.
 class TouchPad {
 public:
-    TouchPad();
     void begin(Preferences& preferences);
     bool sample(int width, int height, int& x, int& y);
     bool calibrated() const { return calibrated_; }
     bool calibrate(TFT_eSPI& display, Preferences& preferences);
 private:
-    SPIClass bus_;
-    XPT2046_Touchscreen chip_;
+    struct Point { int x, y, pressure; };
+    bool readRaw(Point& out);
+    uint16_t transfer16(uint16_t v);
+    uint16_t measure(uint8_t command);
+    bool capturePoint(int index, TFT_eSPI& tft, int x, int y);
     int raw_[3][2] = {};
     bool calibrated_ = false;
-    bool capturePoint(int index, TFT_eSPI& tft, int x, int y);
+    uint32_t lastSample_ = 0;
 };
