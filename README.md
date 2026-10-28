@@ -2,9 +2,14 @@
 
 **A DIY live aircraft-spotting display for the ESP32 Cheap Yellow Display (CYD).**
 
-> **Development status:** This repository is an early prototype, **not yet an
-> aircraft radar**. Do not flash a development artefact expecting a working
-> live map or automatic OTA updates.
+> **Development status:** First experimental firmware is available for hardware
+> testing. Live aircraft fetching, SD map rendering and touch details are
+> implemented but **not yet validated on actual CYD hardware**. No aircraft
+> photographs, signed OTA updates or public one-click installer yet.
+
+**Want to try the firmware?** Follow the [first-flash guide](docs/FIRST-FLASH.md)
+and download the correct CYD variant's factory image from the latest successful
+[GitHub Actions run](https://github.com/shrek1802/CYD-SkyTracker/actions/workflows/build.yml).
 
 <p align="center">
   <img width="480" alt="Example ESP32 Cheap Yellow Display board"
@@ -42,8 +47,8 @@ common ESP32-2432S028R is targeted initially.
 - [x] Phone captive-portal Wi-Fi setup (source added; awaiting test)\n- [x] XPT2046 touchscreen code and calibration (compiled; needs CYD testing)
 - [x] SD mount and manual, SHA-256 checked SD-to-flash OTA code (awaiting test)
 - [x] SD RGB565 tile renderer and pan/zoom/home controls (code compiled; pending hardware test)\n- [x] Ubuntu raster MBTiles-to-SD map converter and automated validation (pending final CI checks)
-- [ ] Wi-Fi ADS-B flight positions and aircraft markers
-- [ ] Touch aircraft -> flight details and photo
+- [x] Test Wi-Fi ADS-B flight positions and aircraft markers (compiled; pending real-CYD test)
+- [x] Tap aircraft -> flight details (compiled; pending real-CYD test)\n- [ ] Aircraft photo on details screen (future)
 - [ ] Postcode-based phone setup, look-direction and distance
 - [ ] Signed, automatic GitHub Release download to SD card
 - [ ] Verified unattended/one-tap installation with recovery
@@ -51,7 +56,7 @@ common ESP32-2432S028R is targeted initially.
 
 ## For developers
 
-This development build is **not suitable as a gift yet**. Work is proposed
+This development build is **not suitable as a gift yet**, but can now be hardware-tested with a matching CYD. Work is proposed
 on the `development/sd-ota-foundation` branch.
 
 To compile using [PlatformIO](https://platformio.org/) (select the correct board profile):
@@ -64,7 +69,7 @@ GitHub Actions also compiles each change and saves a **development-only**
 firmware artefact. A successful compile is not a hardware test and does not
 make that image a supported public release.
 
-Once Wi-Fi and home coordinates are configured, the current firmware renders offline map tiles from the microSD card. **It does not show live planes yet**. If there are no appropriate tiles, the display shows a missing-map warning.\n\nThe current startup page creates a uniquely named setup Wi-Fi hotspot,
+Once Wi-Fi and home coordinates are configured, the current firmware renders offline map tiles from the microSD card. **It now fetches live planes; data and screen behaviour still need testing on real hardware**. If there are no appropriate tiles, the display shows a missing-map warning.\n\nThe current startup page creates a uniquely named setup Wi-Fi hotspot,
 shows its password on the CYD, and serves a phone configuration page at
 `http://192.168.4.1`. The latitude/longitude fields are temporary until
 postcodes and map selection are implemented.
