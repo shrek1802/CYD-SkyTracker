@@ -27,6 +27,7 @@ public:
     bool hasSelection() const { return selected_ >= 0 && selected_ < count_; }
     void deselect();
     void drawDetails(TFT_eSPI& tft) const;
+    const AircraftRecord* selectedRecord() const { return hasSelection() ? &records_[selected_] : nullptr; }
     int count() const { return count_; }
     bool hasData() const { return hasData_; }
     const String& status() const { return status_; }
