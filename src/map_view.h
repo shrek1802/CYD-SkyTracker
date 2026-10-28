@@ -10,6 +10,7 @@ public:
     void draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected);
     void tap(int x, int y, int screenWidth, int screenHeight);
     void panPixels(int dx, int dy);
+    bool project(double lat, double lon, int& x, int& y) const;
     uint8_t zoom() const { return zoom_; }
     bool isReady() const { return ready_; }
 private:
