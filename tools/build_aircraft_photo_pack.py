@@ -80,25 +80,40 @@ def acceptable(lic):
         ("CC0 ", "PUBLIC DOMAIN ", "CC BY ", "CC BY-SA ", "CC-BY-", "CC-BY-SA-"))
 
 
-def good_filename(name):
+def good_filename(name, model):
+    """Require a visible aircraft model in the title, not cabin/wing/sky pics."""
     low = name.lower()
-    return not any(item in low for item in BAD)
+    reject = BAD + ("hangar", "sunspot", "contrail", "sunset", "passagierbereich",
+                    "innenraum", "cruising from", "view from", "winglet",
+                    "underwing", "luggage", "tail of", "flight deck", "skyline")
+    if any(item in low for item in reject):
+        return False
+    letters = re.sub(r"[^a-z0-9]", "", low)
+    m = re.sub(r"[^a-z0-9]", "", model.lower())
+    if m.startswith("airbus"):
+        needle = m[6:]
+    elif m.startswith("boeing"):
+        needle = m[6:]
+    elif m.startswith("embraer"):
+        needle = m[7:]
+    else:
+        needle = m
+    if not (needle in letters or m in letters):
+        return False
+    # Airbus A320 != A320neo; Boeing 737-800 != 737 MAX 8.
+    if needle in ("a319","a320","a321") and (needle+"neo") in letters:
+        return False
+    return True
 
 
-def select(pages):
-    print('  API returned',len(pages),'candidate pages',flush=True)
-    for index,page in enumerate(pages):
-        if not good_filename(page.get("title", "")):
+def select(pages, model):
+    for page in pages:
+        if not good_filename(page.get("title", ""), model):
             continue
         for image in page.get("imageinfo", []):
             lic = image.get("extmetadata", {}).get(
                 "LicenseShortName", {}).get("value", "")
             u = image.get("thumburl", "")
-            if index<2:
-                print('  candidate',repr(page.get("title","")[:65]),
-                      'mime=',image.get("mime"),'license=',repr(lic),
-                      'thumb=',repr(u[:90]),
-                      'source=',repr(image.get("descriptionurl","")[:80]),flush=True)
             if (image.get("mime") != "image/jpeg" or
                 not acceptable(lic) or not
                 u.startswith(("https://upload.wikimedia.org/",
@@ -123,12 +138,12 @@ def lookup(model, category):
     q = api({"generator": "categorymembers",
              "gcmtitle": "Category:" + category,
              "gcmnamespace": "6", "gcmlimit": "50"})
-    match = select(q.get("query", {}).get("pages", []))
+    match = select(q.get("query", {}).get("pages", []), model)
     if match:
         return match
     q = api({"generator": "search", "gsrnamespace": "6", "gsrlimit": "40",
              "gsrsearch": 'intitle:"' + model + '"'})
-    return select(q.get("query", {}).get("pages", []))
+    return select(q.get("query", {}).get("pages", []), model)
 
 
 def make_photo(entry, dst):
