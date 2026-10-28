@@ -50,6 +50,11 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_flight_trail.cpp -o /tmp/skytracker-trail-test
           /tmp/skytracker-trail-test
+      - name: Test exact-registration image matching
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_photo_match.cpp -o /tmp/skytracker-photo-test
+          /tmp/skytracker-photo-test
       - name: Compile profile
         run: pio run -e ${{ matrix.target }}
       - name: Enforce OTA partition size limit
