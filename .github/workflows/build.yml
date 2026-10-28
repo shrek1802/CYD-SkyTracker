@@ -55,6 +55,12 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_photo_match.cpp -o /tmp/skytracker-photo-test
           /tmp/skytracker-photo-test
+      - name: Check type-photo lookup table and numbered Ubuntu flasher
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_type_photo.cpp -o /tmp/skytracker-photo-types
+          /tmp/skytracker-photo-types
+          bash -n tools/flash-app-ubuntu.sh
       - name: Compile profile
         run: pio run -e ${{ matrix.target }}
       - name: Enforce OTA partition size limit
