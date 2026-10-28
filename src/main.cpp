@@ -11,6 +11,7 @@
 #include "map_view.h"
 #include "touch_pad.h"
 #include "flights.h"
+#include "splash.h"
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -25,6 +26,12 @@ MapView mapView;
 TouchPad touch;
 FlightTracker tracker;
 bool detailShowing = false;
+uint32_t splashStartMs = 0;
+constexpr uint32_t kMinSplashMs = 2500;
+void finishSplash() {
+    const uint32_t shown = millis() - splashStartMs;
+    if (shown < kMinSplashMs) delay(kMinSplashMs - shown);
+}
 uint32_t lastFlightFetch = 0;
 uint32_t lastWiFiRetry = 0;
 bool mapShowing = false;
@@ -145,6 +152,7 @@ void startSetupPortal() {
     });
     web.begin();
     portalActive = true;
+    finishSplash();
     statusScreen("Wi-Fi setup", apSsid,
                  "Password: " + apPassword, "Phone: http://192.168.4.1");
 }
@@ -158,11 +166,12 @@ void startWifi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(savedSsid.c_str(), preferences.getString("password", "").c_str());
     const unsigned long started = millis();
-    statusScreen("Connecting...", savedSsid);
+    Splash::status(display, "Connecting to home Wi-Fi...");
     while (WiFi.status() != WL_CONNECTED && millis() - started < 12000UL) {
         delay(150);
     }
     if (WiFi.status() == WL_CONNECTED) {
+        finishSplash();
         const float lat = preferences.getFloat("lat", 0.0f);
         const float lon = preferences.getFloat("lon", 0.0f);
         mapView.begin(lat, lon, 9);
@@ -188,10 +197,12 @@ void setup() {
     digitalWrite(TFT_BL_PIN, HIGH);
     display.init();
     display.setRotation(1);
+    Splash::draw(display, "Initialising microSD...");
+    splashStartMs = millis();
     preferences.begin("skytracker", false);
-    statusScreen("Starting...", "Initialising microSD");
     sdSpi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
     sdReady = SD.begin(SD_CS, sdSpi, 4000000);
+    Splash::status(display, sdReady ? "Reading SD card..." : "No SD card - using grid");
     touch.begin(preferences);
     startWifi();
     Serial.printf("CYD SkyTracker development build - hardware: %s\n", BoardProfile::id());
