@@ -21,7 +21,14 @@ constexpr int SD_MOSI = BoardProfile::sdMosi();
 constexpr int TFT_BL_PIN = BoardProfile::backlightPin();
 Preferences preferences;
 TFT_eSPI display;
+// Screen uses HSPI on the physically tested dual-USB ILI9341 board.
+// The SD card MUST use the other controller: calling SD.begin() on HSPI
+// would reassign the TFT's SCK/MOSI pins, producing a white screen.
+#if defined(USE_HSPI_PORT)
+SPIClass sdSpi(VSPI);
+#else
 SPIClass sdSpi(HSPI);
+#endif
 MapView mapView;
 TouchPad touch;
 FlightTracker tracker;
@@ -171,12 +178,14 @@ void startWifi() {
         delay(150);
     }
     if (WiFi.status() == WL_CONNECTED) {
+        Serial.printf("[WIFI] Connected, local IP %s\n", WiFi.localIP().toString().c_str());
         finishSplash();
         const float lat = preferences.getFloat("lat", 0.0f);
         const float lon = preferences.getFloat("lon", 0.0f);
         mapView.begin(lat, lon, 9);
         tracker.begin(lat, lon, 60);
         mapShowing = true;
+        Serial.println("[BOOT] Preparing first radar display");
         if (!touch.calibrated()) {
             statusScreen("Touch setup", "Tap the 3 crosses", "Touch calibration starting...");
             delay(600);
@@ -195,15 +204,25 @@ void setup() {
     Serial.begin(115200);
     pinMode(TFT_BL_PIN, OUTPUT);
     digitalWrite(TFT_BL_PIN, HIGH);
+    Serial.printf("[BOOT] Hardware profile: %s\n", BoardProfile::id());
+    Serial.println("[BOOT] Initialising TFT...");
     display.init();
     display.setRotation(1);
+    Serial.println("[BOOT] TFT initialised");
     Splash::draw(display, "Initialising microSD...");
     splashStartMs = millis();
     preferences.begin("skytracker", false);
+    Serial.println("[BOOT] Mounting SD on isolated SPI bus...");
     sdSpi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
     sdReady = SD.begin(SD_CS, sdSpi, 4000000);
+    Serial.printf("[BOOT] SD mounted: %s\n", sdReady ? "YES" : "NO");
+    // The branded screen must remain visible after touching the SD bus.
+    // If it becomes blank here, inspect display vs SD SPI ownership.
+    Splash::status(display, sdReady ? "SD mounted" : "No SD - grid available");
     Splash::status(display, sdReady ? "Reading SD card..." : "No SD card - using grid");
+    Serial.println("[BOOT] Initialising touch...");
     touch.begin(preferences);
+    Serial.println("[BOOT] Starting Wi-Fi...");
     startWifi();
     Serial.printf("CYD SkyTracker development build - hardware: %s\n", BoardProfile::id());
     Serial.println("For physical USB-serial test only: type INSTALL_SD to install");
