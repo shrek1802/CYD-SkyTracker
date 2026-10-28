@@ -85,7 +85,9 @@ def good_filename(name, model):
     low = name.lower()
     reject = BAD + ("hangar", "sunspot", "contrail", "sunset", "passagierbereich",
                     "innenraum", "cruising from", "view from", "winglet",
-                    "underwing", "luggage", "tail of", "flight deck", "skyline")
+                    "underwing", "luggage", "tail of", "flight deck", "skyline",
+                    "gear", "moon", "hold előtt", " & sun", "with sun",
+                    "at sunset", "in the sun", "passenger area")
     if any(item in low for item in reject):
         return False
     letters = re.sub(r"[^a-z0-9]", "", low)
@@ -135,14 +137,16 @@ def select(pages, model):
 
 
 def lookup(model, category):
-    q = api({"generator": "categorymembers",
-             "gcmtitle": "Category:" + category,
-             "gcmnamespace": "6", "gcmlimit": "50"})
+    # Prefer a named model in the image filename: exact search ranks recognisable
+    # outside aircraft photos ahead of generic category members (wings/cabins).
+    q = api({"generator": "search", "gsrnamespace": "6", "gsrlimit": "40",
+             "gsrsearch": 'intitle:"' + model + '"'})
     match = select(q.get("query", {}).get("pages", []), model)
     if match:
         return match
-    q = api({"generator": "search", "gsrnamespace": "6", "gsrlimit": "40",
-             "gsrsearch": 'intitle:"' + model + '"'})
+    q = api({"generator": "categorymembers",
+             "gcmtitle": "Category:" + category,
+             "gcmnamespace": "6", "gcmlimit": "50"})
     return select(q.get("query", {}).get("pages", []), model)
 
 
