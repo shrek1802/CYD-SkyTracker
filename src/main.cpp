@@ -274,7 +274,8 @@ void loop() {
                 photo.searching();
                 drawFlightScreen(); // Feedback while Wi-Fi image loads
                 const AircraftRecord* aircraft = tracker.selectedRecord();
-                photo.load(aircraft ? aircraft->registration : nullptr);
+                photo.load(aircraft ? aircraft->registration : nullptr,
+                           aircraft ? aircraft->type : nullptr, sdReady);
                 drawFlightScreen();
             }
         }
