@@ -1,0 +1,91 @@
+{
+  "schema": 1,
+  "project": "CYD SkyTracker",
+  "note": "Build targets only. No physical hardware validation has yet been completed.",
+  "profiles": [
+    {
+      "id": "sunton-2432s028r-ili9341",
+      "environment": "cyd_2432s028r",
+      "name": "Sunton CYD 2.8 ILI9341",
+      "sku": "ESP32-2432S028R",
+      "mcu": "ESP32",
+      "panel": "ILI9341",
+      "touch": "XPT2046",
+      "resolution": [
+        320,
+        240
+      ],
+      "sd": true,
+      "status": "build-only"
+    },
+    {
+      "id": "sunton-2432s028r-v2-ili9341",
+      "environment": "cyd_2432s028r_v2",
+      "name": "Sunton CYD 2.8 v2 ILI9341",
+      "sku": "ESP32-2432S028Rv2",
+      "mcu": "ESP32",
+      "panel": "ILI9341 variant",
+      "touch": "XPT2046",
+      "resolution": [
+        320,
+        240
+      ],
+      "sd": true,
+      "status": "experimental-build"
+    },
+    {
+      "id": "sunton-2432s028r-v3-st7789",
+      "environment": "cyd_2432s028r_st7789",
+      "name": "Sunton CYD 2.8 v3 ST7789",
+      "sku": "ESP32-2432S028Rv3",
+      "mcu": "ESP32",
+      "panel": "ST7789",
+      "touch": "XPT2046",
+      "resolution": [
+        320,
+        240
+      ],
+      "sd": true,
+      "status": "experimental-build"
+    },
+    {
+      "id": "sunton-2432s024r-ili9341",
+      "environment": "cyd_2432s024r",
+      "name": "Sunton CYD 2.4 Resistive",
+      "sku": "ESP32-2432S024R",
+      "mcu": "ESP32",
+      "panel": "ILI9341",
+      "touch": "XPT2046",
+      "resolution": [
+        320,
+        240
+      ],
+      "sd": true,
+      "status": "experimental-build"
+    },
+    {
+      "id": "sunton-3248s035r-st7796",
+      "environment": "cyd_3248s035r",
+      "name": "Sunton CYD 3.5 Resistive",
+      "sku": "ESP32-3248S035R",
+      "mcu": "ESP32",
+      "panel": "ST7796",
+      "touch": "XPT2046",
+      "resolution": [
+        480,
+        320
+      ],
+      "sd": true,
+      "status": "experimental-build"
+    }
+  ],
+  "plannedFamilies": [
+    "ESP32-2432S028C",
+    "ESP32-2432S032R/C",
+    "ESP32-3248S035C",
+    "Guition JC series",
+    "ESP32-S3 RGB/parallel 4.3, 5 and 7 inch",
+    "round ESP32-C3",
+    "no-touch variants"
+  ]
+}
