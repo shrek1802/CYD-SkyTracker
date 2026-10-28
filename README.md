@@ -1,5 +1,8 @@
 # CYD SkyTracker ✈️
 
+<p align="center"><img src="docs/logo.svg" width="240" alt="CYD SkyTracker blue aircraft radar logo"></p>
+<p align="center"><strong>Track the sky from your desktop</strong></p>
+
 **A DIY live aircraft-spotting display for the ESP32 Cheap Yellow Display (CYD).**
 
 > **Development status:** First experimental firmware is available for hardware
@@ -45,6 +48,8 @@ common ESP32-2432S028R is targeted initially.
 - [x] GitHub repository and PlatformIO skeleton
 - [x] CYD screen boot/status page (source added; awaiting CI/hardware test)
 - [x] Phone captive-portal Wi-Fi setup (source added; awaiting test)\n- [x] XPT2046 touchscreen code and calibration (compiled; needs CYD testing)
+- [x] Branded startup splash screen during SD and Wi-Fi initialisation (code added; requires hardware test)
+- [x] Branded GitHub Pages flasher preview with hardware selector (public installer not enabled)
 - [x] SD mount and manual, SHA-256 checked SD-to-flash OTA code (awaiting test)
 - [x] SD RGB565 tile renderer and pan/zoom/home controls (code compiled; pending hardware test)\n- [x] Ubuntu raster MBTiles-to-SD map converter and automated validation (pending final CI checks)
 - [x] Test Wi-Fi ADS-B flight positions and aircraft markers (compiled; pending real-CYD test)
@@ -96,7 +101,7 @@ computer's USB port, choose **Install** in Chrome or Edge, then use
 their phone for setup. Later updates will be staged on the SD card,
 verified and installed over Wi-Fi without needing a computer.
 
-**There is no public installable release yet.**
+**There is no public one-click install release yet.** The [branded web flasher preview](docs/index.html) and [vector logo](docs/logo.svg) are available for review.
 
 ## Sources and credits
 
