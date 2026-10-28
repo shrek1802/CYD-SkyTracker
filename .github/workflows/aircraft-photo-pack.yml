@@ -47,6 +47,34 @@ jobs:
               assert len(lines)>=3 and lines[1] and lines[2].startswith('https://commons.wikimedia.org/')
             print('VALIDATED',len(images),'SD card type photos')
           PY
+      - name: Convert licensed JPEG pack to direct-render RGB565
+        run: |
+          python tools/build_aircraft_photo_rgb565.py \
+            --input /tmp/SkyTracker-Photo-SD \
+            --output /tmp/SkyTracker-RGB565-SD
+      - name: Verify direct-render photo format and creator credits
+        run: |
+          python - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          path=Path('/tmp/SkyTracker-RGB565-SD/SkyTracker-Direct-RGB565-Aircraft-Photos.zip')
+          with ZipFile(path) as z:
+              assert z.testzip() is None
+              photos=[n for n in z.namelist() if n.endswith('.rgb565')]
+              assert len(photos)>=4, photos
+              for photo in photos:
+                  assert len(z.read(photo))==144*96*2
+                  credit=z.read(photo[:-7]+'.txt').decode('utf-8').splitlines()
+                  assert len(credit)>=3 and credit[0] and credit[1]
+                  assert credit[2].startswith('https://commons.wikimedia.org/')
+              print('PASS:',len(photos),'little-endian RGB565 images with licence files')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTracker-Aircraft-Direct-RGB565-SD-Pack
+          path: /tmp/SkyTracker-RGB565-SD/SkyTracker-Direct-RGB565-Aircraft-Photos.zip
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: SkyTracker-Aircraft-Type-Photo-SD-Pack
