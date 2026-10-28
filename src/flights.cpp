@@ -187,30 +187,50 @@ void FlightTracker::deselect() {
 }
 void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     if (!hasSelection()) return;
-    const AircraftRecord& a=records_[selected_];
+    const AircraftRecord& a = records_[selected_];
     tft.fillScreen(TFT_BLACK);
-    tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.fillRect(0,0,tft.width(),32,0x08A3);
+    tft.setTextColor(TFT_CYAN,0x08A3);
     tft.setTextSize(2);
-    tft.setCursor(9,9);
+    tft.setCursor(7,6);
     tft.print(a.flight[0] ? a.flight : a.hex);
-    tft.setTextColor(TFT_WHITE,TFT_BLACK);
     tft.setTextSize(1);
-    int y=46;
-    auto line=[&](const String& label,const String& value){
-        tft.setCursor(10,y); tft.setTextColor(TFT_CYAN,TFT_BLACK); tft.print(label);
-        tft.setTextColor(TFT_WHITE,TFT_BLACK);tft.print("  ");tft.println(value);
-        y+=22;
+    tft.setTextColor(TFT_WHITE,TFT_BLACK);
+
+    // Photo panel lives at x5..161/y37..142. Keep key numbers on the
+    // right and licensing credit visible at the bottom of this 320x240 CYD.
+    const int right = 165;
+    int y = 39;
+    auto line = [&](const char* label, const String& value) {
+        tft.setTextColor(TFT_CYAN,TFT_BLACK);
+        tft.setCursor(right,y);
+        tft.print(label);
+        tft.setTextColor(TFT_WHITE,TFT_BLACK);
+        tft.setCursor(right,y+11);
+        tft.print(value.substring(0,23));
+        y += 30;
     };
-    line("Type",a.type[0]?a.type:"Not identified");
-    line("Registration",a.registration[0]?a.registration:"Not reported");
-    line("ICAO",a.hex);
-    line("Altitude",a.altitudeFt >= 0?String(a.altitudeFt)+" ft":"Unknown/ground");
-    line("Speed",a.speedKt >= 0?String(a.speedKt,0)+" kt":"Unknown");
-    line("Bearing",String(compass(a.bearing))+" "+String(a.bearing)+" deg");
-    line("Distance",String(a.distanceNm,1)+" NM");
-    const int bottom=tft.height()-16;
-    tft.fillRect(0,bottom-9,tft.width(),25,TFT_DARKGREY);
+    line("REG",a.registration[0] ? a.registration : "Unknown");
+    line("ALTITUDE",a.altitudeFt >= 0 ? String(a.altitudeFt)+" ft" : "Unknown");
+    line("SPEED",a.speedKt >= 0 ? String(a.speedKt,0)+" kt" : "Unknown");
+
+    tft.setTextSize(1);
+    tft.setCursor(7,150);
+    tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.print("TYPE ");
+    tft.setTextColor(TFT_WHITE,TFT_BLACK);
+    tft.print(a.type[0]?a.type:"Not identified");
+    tft.setCursor(7,165);
+    tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.print("ICAO ");
+    tft.setTextColor(TFT_WHITE,TFT_BLACK);
+    tft.print(a.hex);
+    tft.print("  ");
+    tft.print(a.distanceNm,1);
+    tft.print(" NM");
+    const int bottom=tft.height()-17;
+    tft.fillRect(0,bottom,tft.width(),17,TFT_DARKGREY);
     tft.setTextColor(TFT_YELLOW,TFT_DARKGREY);
-    tft.setCursor(10,bottom-3);
+    tft.setCursor(9,bottom+4);
     tft.print("Tap to return to map");
 }
