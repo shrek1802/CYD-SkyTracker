@@ -12,6 +12,7 @@
 #include "touch_pad.h"
 #include "flights.h"
 #include "splash.h"
+#include "photo_view.h"
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -32,6 +33,7 @@ SPIClass sdSpi(HSPI);
 MapView mapView;
 TouchPad touch;
 FlightTracker tracker;
+PhotoView photo;
 bool detailShowing = false;
 uint32_t splashStartMs = 0;
 constexpr uint32_t kMinSplashMs = 2500;
@@ -67,6 +69,13 @@ void drawRadar() {
     display.setTextColor(TFT_WHITE, 0x08A3);
     display.setCursor(5, display.height() - 31);
     display.print(tracker.status().substring(0, 23));
+}
+
+void drawFlightScreen() {
+    if (!tracker.hasSelection()) return;
+    tracker.drawDetails(display);
+    photo.draw(display);
+    photo.drawCredit(display);
 }
 
 void statusScreen(const String& heading, const String& line1,
@@ -245,6 +254,7 @@ void loop() {
                 // Keep the flight selected on return so its track and outline
                 // remain visible on the map through subsequent ADS-B polls.
                 detailShowing = false;
+                photo.clear();
                 drawRadar();
             } else if (abs(dx) > 22 || abs(dy) > 22) {
                 mapView.panPixels(dx, dy);
@@ -253,6 +263,7 @@ void loop() {
                 // On-device Wi-Fi/position setup without USB.
                 mapShowing = false;
                 tracker.deselect();
+                photo.clear();
                 startSetupPortal();
             } else if (touchEndX >= display.width() - 46 &&
                        touchEndY >= 32 && touchEndY < 170) {
@@ -260,7 +271,10 @@ void loop() {
                 drawRadar();
             } else if (tracker.selectAt(touchEndX, touchEndY, mapView)) {
                 detailShowing = true;
-                tracker.drawDetails(display);
+                drawFlightScreen(); // Feedback while Wi-Fi image loads
+                const AircraftRecord* aircraft = tracker.selectedRecord();
+                photo.load(aircraft ? aircraft->registration : nullptr);
+                drawFlightScreen();
             }
         }
         touchingLastFrame = pressed;
@@ -274,8 +288,9 @@ void loop() {
             // A selected flight may leave the API radius. Return to the
             // map instead of showing a frozen, no-longer-updating detail page.
             detailShowing = false;
+            photo.clear();
             drawRadar();
-        } else if (detailShowing) tracker.drawDetails(display);
+        } else if (detailShowing) drawFlightScreen();
         else drawRadar();
     }
     if (mapShowing && WiFi.status() != WL_CONNECTED &&
