@@ -101,7 +101,8 @@ def select(pages):
                       'source=',repr(image.get("descriptionurl","")[:80]),flush=True)
             if (image.get("mime") != "image/jpeg" or
                 not acceptable(lic) or not
-                u.startswith("https://upload.wikimedia.org/")):
+                u.startswith(("https://upload.wikimedia.org/",
+                                "https://thumb.wikimedia.org/"))):
                 continue
             artist_html = image.get("extmetadata", {}).get(
                 "Artist", {}).get("value", "")
