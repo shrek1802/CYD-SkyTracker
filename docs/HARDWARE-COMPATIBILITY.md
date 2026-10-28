@@ -2,16 +2,19 @@
 
 Updated: 28 October 2026.
 
-**Compilation is not hardware verification.** No board has yet been verified
-on a physical unit by this project. Never describe an untested variant as
-ready-to-flash or suitable for an unattended update.
+**Compilation is not complete hardware verification.** One screen configuration
+has been **physically confirmed** by a SkyTracker tester: dual-USB
+ESP32-2432S028, ILI9341, HSPI, inversion ON, 27 MHz. The isolated
+display-only diagnostic cycled red, green, blue, black, white and rendered
+test text. **This does not verify the full aircraft radar, SD card or
+touchscreen yet.** Other board combinations remain untested.
 
 ## Firmware build matrix (ESP32 Classic; Sunton SPI boards)
 
 | PlatformIO environment | Board | Panel | Touch controller | Build profile |
 |---|---|---|---|---|
 | `cyd_2432s028r` | ESP32-2432S028R, classic 2.8" | ILI9341 | XPT2046 | Added |
-| `cyd_2432s028r_v2` | ESP32-2432S028Rv2, 2.8" | ILI9341 special init | XPT2046 | Experimental |
+| `cyd_2432s028r_v2` | Dual-USB ESP32-2432S028, 2.8" | ILI9341 + HSPI + inversion ON | XPT2046 | **Display-only diagnostic PASS**; integrated firmware untested |
 | `cyd_2432s028r_st7789` | ESP32-2432S028Rv3, 2.8" | ST7789 | XPT2046 | Experimental |
 | `cyd_2432s024r` | ESP32-2432S024R, 2.4" | ILI9341 | XPT2046 | Experimental |
 | `cyd_3248s035r` | ESP32-3248S035R, 3.5" | ST7796 | XPT2046 | Experimental |
@@ -24,6 +27,18 @@ needed, even though a separate compile target is already present.
 These five Sunton board definitions are sourced from documented hardware pins
 and all share **SD CS5, CLK18, MISO19, MOSI23**. Backlight is GPIO21 on 2.8",
 GPIO27 on the 2.4"/3.5". Screen size and panel drivers are build-specific.
+
+**SPI arbitration fix (October 2026):** the physically confirmed dual-USB
+ILI9341 profile uses TFT_eSPI `USE_HSPI_PORT` on GPIO14/13/12, CS15,
+DC2, GPIO21 backlight. It requires `TFT_INVERSION_ON`, 27 MHz and
+`LOAD_GLCD`. Its microSD uses **VSPI** on GPIO18/19/23/5.
+The previous app used **HSPI for both TFT and SD**, causing bus
+reconfiguration during SD initialisation and a likely white screen.
+The shared application now assigns SD to the *opposite hardware SPI
+controller* when `USE_HSPI_PORT` is selected.
+
+This conclusion is based on a successful display-only test and code review;
+the full corrected application still requires hardware confirmation.
 
 Do not assume that a two-USB board is always ST7789: both ILI9341 and ST7789
 two-port examples have been reported. Confirm your panel before flashing.
