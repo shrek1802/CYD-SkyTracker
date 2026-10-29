@@ -36,19 +36,21 @@ PALETTES = {
         'label':'#213c48', 'label_halo':'#f5f7f2',
     },
     'night': {
-        'background':'#172431',
+        # Flight radar-inspired *independent* aviation cartography. Not a
+        # provider's satellite image, scraped raster tile or style sheet.
+        'background':'#101d2a',
         'land': {
-            'park':'#263e39', 'forest':'#1d3934', 'grass':'#263a39',
-            'farmland':'#28352f', 'residential':'#283542',
-            'industrial':'#323843', 'commercial':'#303b47',
-            'water':'#19445d', 'building':'#344554',
-            'airport':'#293c4d'
+            'park':'#234138', 'forest':'#1b3932', 'grass':'#2a4038',
+            'farmland':'#25342e', 'residential':'#283a48',
+            'industrial':'#303e4b', 'commercial':'#354550',
+            'water':'#164b68', 'building':'#3a4958',
+            'airport':'#2b4a54'
         },
-        'roads':['#e5ae6e','#cda879','#bb9b77','#8e92a1',
-                 '#697c90','#43576a','#37495b','#324255'],
-        'road_edge':'#1a2936', 'waterway':'#31748c',
-        'rail':'#536678', 'runway':'#a5b6bc', 'taxiway':'#596f7c',
-        'label':'#e4edf1', 'label_halo':'#172431',
+        'roads':['#edbe77','#dfb377','#c5a683','#aeb5c4',
+                 '#8c9aab','#70899e','#4f6a7c','#3d5265'],
+        'road_edge':'#1a2939', 'waterway':'#347d9a',
+        'rail':'#63798a', 'runway':'#b6c8cb', 'taxiway':'#78929e',
+        'label':'#e9f2f7', 'label_halo':'#101d2a',
     }
 }
 LOW_ZOOM_RADIUS = {9:110,10:85,11:65,12:45}
@@ -263,7 +265,7 @@ def main():
     (maps/'attribution.txt').write_text('(c) OpenStreetMap contributors | ODbL 1.0\n')
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
         'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
-        'zoom_tile_counts':counts,'cartography':'day-and-night-aviation-v3',
+        'zoom_tile_counts':counts,'cartography':'day-and-night-aviation-v4',
         'themes':{'day':'/maps/z/x/y.rgb565','night':'/maps/night/z/x/y.rgb565'},
         'data_source':BASE_URL,'source_counties':counties,
         'licence':'OpenStreetMap ODbL 1.0'},indent=2))
