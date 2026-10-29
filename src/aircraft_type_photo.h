@@ -49,6 +49,7 @@ static constexpr Entry kModels[] = {
     {"CRJ2", "Bombardier CRJ200", "Bombardier CRJ200"},
     {"CRJ7", "Bombardier CRJ700", "Bombardier CRJ700"},
     {"CRJ9", "Bombardier CRJ900", "Bombardier CRJ900"},
+    {"F406", "Reims-Cessna F406 Caravan II", "Reims-Cessna F406"},
     {"C172", "Cessna 172", "Cessna 172"},
     {"C182", "Cessna 182", "Cessna 182"},
     {"C208", "Cessna 208 Caravan", "Cessna 208 Caravan"},
