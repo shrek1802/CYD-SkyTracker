@@ -106,17 +106,20 @@ PINNED = {
     "A21N": "File:Airbus A321neo EI-LRE MD1.jpg",
     # Visually reviewed alternatives to sky-only / cabin / engine images.
     "A35K": "File:Cathay A35K.jpg",
-    "B739": "File:Boeing 737-900 (26889681761).jpg",
+    "B739": "File:Boeing 737-900 United Airlines.jpg",
     "B753": "File:Boeing 757 300 plane aircraft.jpg",
     "CRJ9": "File:Bombardier CRJ900.JPG",
     "GLF6": "File:Gulfstream G650.JPG",
+    "C17": "File:C-17 Globemaster III (2).jpg",
+    "DA40": "File:Diamond DA40 (N505JF).jpg",
 }
 
 BAD = ("cockpit", "interior", "cabin", "safety card", "seat map", "logo",
        "diagram", "simulation", "illustration", "engine detail", "scale model",
        "wing view", "seat", "floorplan", "emergency oxygen",
        "oxygen mask", "engine", "turbine", "winglet", "close-up",
-       "landing gear", "undercarriage")
+       "landing gear", "undercarriage", "inside", "cargo bay",
+       "passenger seats", "sunrise", "sunset")
 
 
 class Plain(HTMLParser):
