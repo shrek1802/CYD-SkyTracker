@@ -39,6 +39,7 @@ FlightTracker tracker;
 PhotoView photo;
 bool detailShowing = false;
 bool photoFullscreen = false;
+bool moreInfoShowing = false;
 uint32_t splashStartMs = 0;
 constexpr uint32_t kMinSplashMs = 2500;
 void finishSplash() {
@@ -82,9 +83,16 @@ void drawRadar() {
 void drawFlightScreen() {
     if (!tracker.hasSelection()) return;
     photoFullscreen = false;
+    moreInfoShowing = false;
     tracker.drawDetails(display);
     photo.drawHero(display);
     photo.drawCreditAt(display, DetailLayout::kCreditY);
+}
+void drawMoreScreen() {
+    if(!tracker.hasSelection())return;
+    photoFullscreen=false;
+    moreInfoShowing=true;
+    tracker.drawExtraDetails(display);
 }
 void drawPhotoScreen() {
     if (!tracker.hasSelection()) return;
@@ -378,18 +386,22 @@ void loop() {
                                (touchEndY < 28 && touchEndX < 100)) {
                         drawFlightScreen();
                     }
+                } else if(moreInfoShowing) {
+                    if(touchEndY>=210 && touchEndX<158) {
+                        drawFlightScreen();
+                    } else if(touchEndY>=210 && touchEndX>=158) {
+                        detailShowing=false;moreInfoShowing=false;
+                        photo.clear();drawRadar();
+                    }
                 } else {
-                    const bool showPhoto =
-                        DetailLayout::openPhoto(touchEndX,touchEndY);
-                    const bool returnToMap =
-                        DetailLayout::goToMap(touchEndX,touchEndY);
-                    if (showPhoto) {
-                        drawPhotoScreen();
-                    } else if (returnToMap) {
-                        detailShowing = false;
-                        photoFullscreen = false;
-                        photo.clear();
-                        drawRadar();
+                    const bool showPhoto=DetailLayout::kHero.hit(touchEndX,touchEndY);
+                    const bool showMore=DetailLayout::kPhotoButton.hit(touchEndX,touchEndY);
+                    const bool returnToMap=DetailLayout::goToMap(touchEndX,touchEndY);
+                    if(showPhoto)drawPhotoScreen();
+                    else if(showMore)drawMoreScreen();
+                    else if(returnToMap) {
+                        detailShowing=false;moreInfoShowing=false;
+                        photo.clear();drawRadar();
                     }
                 }
             } else if (abs(dx) > 22 || abs(dy) > 22) {
@@ -431,7 +443,8 @@ void loop() {
             drawRadar();
         } else if (detailShowing) {
             // Neither screen repaints its photo every 30s.
-            if (!photoFullscreen) tracker.updateDetailsTelemetry(display);
+            if (moreInfoShowing) tracker.drawExtraDetails(display);
+            else if (!photoFullscreen) tracker.updateDetailsTelemetry(display);
         } else {
             // Aircraft move; the static map background stays on the screen.
             tracker.drawChanges(display, mapView, sdReady);
