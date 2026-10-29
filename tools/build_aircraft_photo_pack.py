@@ -40,9 +40,10 @@ MODELS = {
 # Do not replace these with arbitrary first-search hits.
 PINNED = {
     "A319": "File:Airbus A319 easyJet.JPG",
-    "A320": "File:Airbus A320 (British Airways) (3338770065).jpg",
-    "A321": "File:Airbus A321.jpg",
+    "A320": "File:EasyJet Airbus A320-200 G-EZRT.jpg",
+    "A321": "File:EasyJet Airbus A321 Landing at CDG.jpg",
     "B738": "File:Ryanair UK Boeing 737-800.jpg",
+    "AT76": "File:ATR 72-600 in flight.jpg",
 }
 
 BAD = ("cockpit", "interior", "cabin", "safety card", "seat map", "logo",
