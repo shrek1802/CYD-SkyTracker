@@ -35,6 +35,16 @@ MODELS = {
     "E190": ("Embraer 190", "Embraer 190"),
     "AT76": ("ATR 72-600", "ATR 72-600"),
 }
+# Hand-picked EXTERIOR airframe images, verified as examples of each model.
+# Commons licensing and author metadata are fetched afresh and validated.
+# Do not replace these with arbitrary first-search hits.
+PINNED = {
+    "A319": "File:Airbus A319 easyJet.JPG",
+    "A320": "File:Airbus A320 (British Airways) (3338770065).jpg",
+    "A321": "File:Airbus A321.jpg",
+    "B738": "File:Ryanair UK Boeing 737-800.jpg",
+}
+
 BAD = ("cockpit", "interior", "cabin", "safety card", "seat map", "logo",
        "diagram", "simulation", "illustration", "engine detail", "scale model",
        "wing view", "seat", "floorplan")
@@ -68,7 +78,7 @@ def api(params):
         "action": "query", "prop": "imageinfo",
         "iiprop": "url|extmetadata|mime",
         "iiextmetadatafilter": "Artist|LicenseShortName",
-        "iiurlwidth": "280", "format": "json", "formatversion": "2",
+        "iiurlwidth": "700", "format": "json", "formatversion": "2",
     }
     p.update(params)
     return json.loads(request(COMMONS + "?" + urllib.parse.urlencode(p)))
@@ -108,9 +118,9 @@ def good_filename(name, model):
     return True
 
 
-def select(pages, model):
+def select(pages, model, pinned=False):
     for page in pages:
-        if not good_filename(page.get("title", ""), model):
+        if not pinned and not good_filename(page.get("title", ""), model):
             continue
         for image in page.get("imageinfo", []):
             lic = image.get("extmetadata", {}).get(
@@ -136,7 +146,13 @@ def select(pages, model):
     return None
 
 
-def lookup(model, category):
+def lookup(model, category, pinned_title=None):
+    if pinned_title:
+        q = api({"titles": pinned_title})
+        match = select(q.get("query", {}).get("pages", []), model, pinned=True)
+        if not match:
+            raise ValueError(f"Curated Commons file invalid, missing, or not freely licensed: {pinned_title}")
+        return match
     # Prefer a named model in the image filename: exact search ranks recognisable
     # outside aircraft photos ahead of generic category members (wings/cabins).
     q = api({"generator": "search", "gsrnamespace": "6", "gsrlimit": "40",
@@ -154,7 +170,7 @@ def make_photo(entry, dst):
     body = request(entry["url"])
     with Image.open(io.BytesIO(body)) as source:
         original = ImageOps.exif_transpose(source).convert("RGB")
-        original.thumbnail((280, 188), Image.Resampling.LANCZOS)
+        original.thumbnail((700, 500), Image.Resampling.LANCZOS)
         output = io.BytesIO()
         original.save(output, format="JPEG", quality=77, optimize=True,
                       progressive=False, subsampling="4:2:0")
@@ -175,7 +191,7 @@ def main():
     for code, (model, category) in MODELS.items():
         try:
             print(f"Looking up {code}: {model} ...", flush=True)
-            entry = lookup(model, category)
+            entry = lookup(model, category, PINNED.get(code))
             if not entry:
                 print("  no clearly licensed JPEG, skipped", flush=True)
                 continue
