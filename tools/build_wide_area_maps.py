@@ -19,7 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 # runs ordinary Python tests without the heavier OSM-vector build dependency.
 PALETTES = {
     "day": {"background":"#f0f2ed","label":"#213c48","label_halo":"#f5f7f2"},
-    "night": {"background":"#172431","label":"#e4edf1","label_halo":"#172431"},
+    "night": {"background":"#101d2a","label":"#e9f2f7","label_halo":"#101d2a"},
 }
 
 def project(lat,lon,z):
@@ -47,8 +47,8 @@ SOURCE_FILES = {
 # Broad world view at z5, most of Britain / neighbouring regions at z6-7,
 # and a generous UK regional view at z8. Each radius also leaves room to pan.
 RADIUS = {5: 950, 6: 700, 7: 480, 8: 300}
-OCEAN = {"day": "#b7d6e3", "night": "#103047"}
-COAST = {"day": "#82a8b5", "night": "#3f778e"}
+OCEAN = {"day": "#b7d6e3", "night": "#0f3249"}
+COAST = {"day": "#82a8b5", "night": "#4d90a7"}
 
 
 def font(size, bold=False):
