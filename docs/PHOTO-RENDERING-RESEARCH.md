@@ -1,3 +1,44 @@
+## Real CYD test result — 29 October 2026
+
+The user has physically tested the ILI9341 v2 / HSPI / inversion-ON build
+with `PHOTO_TEST`. This is now confirmed by a real 115200-baud serial log:
+
+- `VERSION` -> `[CMD] ... PHOTO_TEST=YES`
+- `[CMD] SD mounted=YES`, free heap approximately 206 KB
+- `[PHOTO] SD RGB565 /aircraft/B738.rgb565: present, 27648 bytes, licensed=1`
+- `[PHOTO_TEST] SD RGB565 READY`
+- `[PHOTO] RGB565 drawing: PASS, 96 rows`
+- **Visual feedback:** a blurry image appeared, but the user could not
+  recognise the plane.
+
+This proves file presence, attribution validation, SD row reading and
+pushImage execution; it **does not prove correct screen pixel colours,
+sharpness or recognizable composition**. Do not treat successful row
+drawing as a successful photo feature.
+
+Inspected the actual bundled `B738.rgb565` off-device by decoding its
+little-endian RGB565 payload: it contains a Boeing 737 image where the
+aircraft occupies a thin strip amid sky/runway. The low resolution
+(144×96) plus composition accounts for significant softness. A
+byte-swapped interpretation produces obvious unnatural rainbow colours;
+without a device photograph we cannot exclude a TFT swap issue.
+
+A dedicated *SD-card-only* replacement `B738.rgb565` has been produced
+with a larger, recognisable Norwegian 737-800 photograph, white test
+label `BOEING 737-800` and RGB colour patches. It retains the matching
+CC BY-SA attribution file. The user can copy only those two files to SD
+and rerun the existing `PHOTO_TEST` with **no firmware reflash**.
+
+Interpretation: if the lettering and RGB squares are crisp, prioritize
+better photo selection and a larger on-device photo card. If lettering
+or colours are scrambled, investigate TFT_eSPI byte swapping and
+drawing-window state with the screen photograph before any image
+pipeline change.
+
+The occasional missing `/sd/maps/9/255/*.rgb565` messages are **map
+coverage**, separate from photo SD access; the logs show SD mounted.
+
+
 # Aircraft photo rendering: evidence-based comparison and SD-first architecture
 
 Reviewed: 28 October 2026. This is a research and implementation note,
