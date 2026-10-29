@@ -153,18 +153,18 @@ def level(source,lat,lon,radius,z,output,style='day'):
     priority={'residential':0,'commercial':1,'industrial':2,'farmland':3,
               'forest':4,'grass':5,'park':6,'airport':7,'water':8,'building':9}
     for kind,pts in sorted(source.areas,key=lambda p:priority[p[0]]):
-        if kind=='building' and z<13:continue
-        if kind in ('commercial','industrial','residential') and z<11:continue
-        if kind in ('grass','farmland') and z<10:continue
+        if kind=='building':continue  # fine footprints obscure plane markers on the 2.8in radar
+        if kind in ('commercial','industrial','residential') and z<12:continue
+        if kind in ('grass','farmland') and z<12:continue
         fill=palette['land'][kind]
         apply_to_tiles(pts,lambda dr,line: dr.polygon(line,fill=fill))
 
     # Water/rail/roads overlay their landuse base with clear hierarchy.
     paints=palette['roads']
     def line_width(rank):
-        return max(1,(6-rank)+(z-12))
+        return max(1,(5-rank)+(z-12))
     for layer,rank,way in sorted(source.lines,key=lambda e: (0 if e[0]=='water' else 1 if e[0]=='rail' else 3 if e[0] in ('runway','taxiway') else 2, -e[1])):
-        if layer=='road' and ((z<=9 and rank>2) or (z==10 and rank>4) or (z==11 and rank>5) or (z==12 and rank>6) or (z>=13 and rank>6)):
+        if layer=='road' and rank > {9:1,10:2,11:3,12:4,13:5}.get(z,5):
             continue
         if layer=='water':
             # Tiny streams and drains at zoom 9 create blue spaghetti.
@@ -185,7 +185,7 @@ def level(source,lat,lon,radius,z,output,style='day'):
             # At z13 one-pixel residential roads retain local streets but
             # stop their outlines covering most of a 320x188 viewport.
             if z>=13 and rank>=5: w=1
-            casing=1 if rank>=4 else 2
+            casing=0 if rank>=3 else 1
             def draw_road(dr,line):
                 dr.line(line,fill=palette['road_edge'],width=w+casing,joint='curve')
                 dr.line(line,fill=paints[rank],width=w,joint='curve')
@@ -194,29 +194,39 @@ def level(source,lat,lon,radius,z,output,style='day'):
     # Place labels must be drawn on ALL intersecting tiles. Earlier builds
     # drew text only on the centre tile, cutting town names at 256px seams.
     # Store collision boxes in world pixels so a seam cannot duplicate a name.
+    # Labels are baked into raster tiles once per zoom, at the actual pixel
+    # size for the 320x240 screen. The smallest levels show city names only.
+    visible_rank={9:0,10:1,11:1,12:2,13:3}.get(z,3)
+    text_size={9:(9,9),10:(10,9),11:(11,10),
+               12:(12,10),13:(13,11)}.get(z,(11,10))
+    pad={9:18,10:16,11:14,12:10,13:8}.get(z,12)
     used={key:[] for key in images}
+    placed={key:0 for key in images}
+    max_names={9:3,10:5,11:6,12:9,13:14}.get(z,6)
     for rank,name,plat,plon in sorted(source.places):
-        if rank>max(1,z-9):continue
+        if rank>visible_rank:continue
         u,v=project(plat,plon,z)
         tile=(int(u//256),int(v//256))
-        if tile not in draws:continue
-        f=font(14 if rank<2 else 11,rank<2)
+        if tile not in draws or placed[tile]>=max_names:continue
+        f=font(text_size[0] if rank==0 else text_size[1],rank==0)
         bb=draws[tile].textbbox((0,0),name,font=f)
         w=bb[2]-bb[0];h=bb[3]-bb[1]
         tx=round(u-w/2);ty=round(v-h/2)
-        box=(tx-3,ty-3,tx+w+3,ty+h+3)
+        box=(tx-pad,ty-pad,tx+w+pad,ty+h+pad)
         affected=[(ix,iy)
                   for ix in range(max(x0,int(box[0]//256)),min(x1,int(box[2]//256))+1)
                   for iy in range(max(y0,int(box[1]//256)),min(y1,int(box[3]//256))+1)
                   if (ix,iy) in draws]
-        if any(not(box[2]<other[0] or box[0]>other[2] or
-                   box[3]<other[1] or box[1]>other[3])
-               for key in affected for other in used[key]):continue
+        if any(placed[key]>=max_names or any(
+                not(box[2]<other[0] or box[0]>other[2] or
+                    box[3]<other[1] or box[1]>other[3])
+               for other in used[key]) for key in affected):continue
         for ix,iy in affected:
             draws[(ix,iy)].text((tx-ix*256,ty-iy*256),name,font=f,
-                                fill=palette['label'],stroke_width=2,
+                                fill=palette['label'],stroke_width=1,
                                 stroke_fill=palette['label_halo'])
             used[(ix,iy)].append(box)
+            placed[(ix,iy)]+=1
     for (x,y),img in images.items():
         dest=output/str(z)/str(x%(1<<z));dest.mkdir(parents=True,exist_ok=True)
         (dest/f'{y}.rgb565').write_bytes(as565(img))
@@ -265,7 +275,7 @@ def main():
     (maps/'attribution.txt').write_text('(c) OpenStreetMap contributors | ODbL 1.0\n')
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
         'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
-        'zoom_tile_counts':counts,'cartography':'day-and-night-aviation-v4',
+        'zoom_tile_counts':counts,'cartography':'day-and-night-radar-clean-v5',
         'themes':{'day':'/maps/z/x/y.rgb565','night':'/maps/night/z/x/y.rgb565'},
         'data_source':BASE_URL,'source_counties':counties,
         'licence':'OpenStreetMap ODbL 1.0'},indent=2))
