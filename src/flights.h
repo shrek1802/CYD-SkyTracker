@@ -3,6 +3,7 @@
 #include <TFT_eSPI.h>
 #include "flight_trail.h"
 #include "flight_motion.h"
+#include "aircraft_symbol.h"
 class MapView;
 
 struct AircraftRecord {
@@ -40,6 +41,7 @@ public:
     bool hasData() const { return hasData_; }
     const String& status() const { return status_; }
     uint32_t lastPollMs() const { return lastPollMs_; }
+    uint32_t lastGoodPollMs() const { return lastGoodPollMs_; }
 private:
     AircraftRecord records_[MAX_AIRCRAFT] = {};
     AircraftRecord incoming_[MAX_AIRCRAFT] = {}; // stage data without blanking old planes
@@ -51,6 +53,8 @@ private:
         int16_t x = 0, y = 0, heading = 0;
         uint16_t colour = 0;
         bool highlighted = false;
+        AircraftSymbol::Kind kind = AircraftSymbol::Kind::Airliner;
+        float scale = 0.86f;
     };
     struct PaintedSegment { int16_t x1, y1, x2, y2; };
     PaintedMarker painted_[MAX_AIRCRAFT] = {};
@@ -66,5 +70,6 @@ private:
     bool hasData_ = false;
     String status_ = "Waiting for ADS-B";
     uint32_t lastPollMs_ = 0;
+    uint32_t lastGoodPollMs_ = 0;
     uint32_t pollIntervalMs_ = 10000; // 10-sec API polls, back off on failures
 };
