@@ -28,7 +28,7 @@ inline const char* compass16(float bearing) {
         "N","NNE","NE","ENE","E","ESE","SE","SSE",
         "S","SSW","SW","WSW","W","WNW","NW","NNW"
     };
-    int sector = (int(bearing + 11.25f) / 22) % 16;
+    int sector = (int(bearing + 11.25f) / 22.5f) % 16;
     if(sector<0)sector+=16;
     return names[sector];
 }
