@@ -46,6 +46,8 @@ void FlightTracker::begin(double homeLat,double homeLon,int radiusNm) {
     selectedHex_[0] = 0;
     trail_.clear();
     hasData_ = false;
+    paintValid_ = false;
+    paintedCount_ = paintedTrailCount_ = 0;
     status_ = "Waiting for ADS-B";
     lastPollMs_ = 0;
 }
@@ -135,31 +137,117 @@ bool FlightTracker::poll() {
     status_ = "Live ADS-B";
     return true;
 }
-void FlightTracker::drawMarkers(TFT_eSPI& tft, const MapView& map) const {
-    if (!hasData_) return;
-
-    // The trail uses at most 20 positions from the *selected* aircraft,
-    // recorded no closer together than 120m. No large framebuffer needed.
-    if (selected_ >= 0 && trail_.size() > 1) {
-        for (int i = 1; i < trail_.size(); ++i) {
+void FlightTracker::capturePaint(const MapView& map, PaintedMarker* icons,
+                                 int& iconCount, PaintedSegment* segments,
+                                 int& segmentCount) const {
+    iconCount=0; segmentCount=0;
+    if(!hasData_)return;
+    if(selected_>=0 && trail_.size()>1) {
+        for(int i=1;i<trail_.size();++i) {
             int x1=0,y1=0,x2=0,y2=0;
             const auto& before=trail_.at(i-1);
             const auto& after=trail_.at(i);
-            if (map.project(before.lat,before.lon,x1,y1) &&
-                map.project(after.lat,after.lon,x2,y2))
-                tft.drawLine(x1,y1,x2,y2,TFT_CYAN);
+            if(map.project(before.lat,before.lon,x1,y1)&&
+               map.project(after.lat,after.lon,x2,y2)) {
+                segments[segmentCount++]={int16_t(x1),int16_t(y1),
+                                          int16_t(x2),int16_t(y2)};
+            }
         }
     }
-
-    for (int i = 0; i < count_; ++i) {
-        int x = 0, y = 0;
-        const AircraftRecord& a = records_[i];
-        if (!map.project(a.lat, a.lon, x, y)) continue;
-        const uint16_t colour = a.altitudeFt < 0 ? TFT_CYAN :
-                                a.altitudeFt < 10000 ? TFT_YELLOW : TFT_WHITE;
-        AircraftIcon::draw(tft, x, y, a.heading, colour, i == selected_);
+    for(int i=0;i<count_;++i) {
+        int x=0,y=0;
+        const AircraftRecord& a=records_[i];
+        if(!map.project(a.lat,a.lon,x,y))continue;
+        PaintedMarker& p=icons[iconCount++];
+        memcpy(p.hex,a.hex,sizeof(p.hex));
+        p.x=int16_t(x);p.y=int16_t(y);
+        p.heading=int16_t(std::lround(a.heading));
+        p.colour=a.altitudeFt<0?TFT_CYAN:
+                 a.altitudeFt<10000?TFT_YELLOW:TFT_WHITE;
+        p.highlighted=(i==selected_);
     }
 }
+bool FlightTracker::samePaint(const PaintedMarker& a,const PaintedMarker& b) {
+    return strcmp(a.hex,b.hex)==0&&
+           a.x==b.x&&a.y==b.y&&a.heading==b.heading&&
+           a.colour==b.colour&&a.highlighted==b.highlighted;
+}
+void FlightTracker::drawMarkers(TFT_eSPI& tft,const MapView& map) {
+    PaintedMarker fresh[MAX_AIRCRAFT];
+    PaintedSegment segments[FlightTrail::kCapacity-1];
+    int freshCount=0,segmentCount=0;
+    capturePaint(map,fresh,freshCount,segments,segmentCount);
+    for(int i=0;i<segmentCount;++i) {
+        const auto& a=segments[i];
+        tft.drawLine(a.x1,a.y1,a.x2,a.y2,TFT_CYAN);
+    }
+    for(int i=0;i<freshCount;++i) {
+        const auto& a=fresh[i];
+        AircraftIcon::draw(tft,a.x,a.y,float(a.heading),a.colour,a.highlighted);
+    }
+    paintedCount_=freshCount;
+    paintedTrailCount_=segmentCount;
+    for(int i=0;i<freshCount;++i)painted_[i]=fresh[i];
+    for(int i=0;i<segmentCount;++i)paintedTrail_[i]=segments[i];
+    paintValid_=true;
+}
+
+void FlightTracker::drawChanges(TFT_eSPI& tft,MapView& map,bool sdReady) {
+    if(!paintValid_) {
+        drawMarkers(tft,map);
+        return;
+    }
+    PaintedMarker fresh[MAX_AIRCRAFT];
+    PaintedSegment freshTrail[FlightTrail::kCapacity-1];
+    int count=0,segments=0;
+    capturePaint(map,fresh,count,freshTrail,segments);
+    bool change=false;
+    for(int i=0;i<paintedCount_;++i) {
+        bool same=false;
+        for(int j=0;j<count;++j) {
+            if(samePaint(painted_[i],fresh[j])) {same=true;break;}
+        }
+        if(!same) {
+            // A small (~40x40) background repair, rather than wiping 320x240
+            // and re-streaming every tile from microSD each 30 seconds.
+            map.restoreRect(tft,painted_[i].x-20,painted_[i].y-20,
+                            40,40,sdReady);
+            change=true;
+        }
+    }
+    bool trailChanged=paintedTrailCount_!=segments;
+    if(!trailChanged) {
+        for(int i=0;i<segments;++i) {
+            const auto& a=paintedTrail_[i];const auto& b=freshTrail[i];
+            if(a.x1!=b.x1||a.y1!=b.y1||a.x2!=b.x2||a.y2!=b.y2) {
+                trailChanged=true;break;
+            }
+        }
+    }
+    if(trailChanged) {
+        for(int i=0;i<paintedTrailCount_;++i) {
+            const auto& a=paintedTrail_[i];
+            const int x=std::min(int(a.x1),int(a.x2))-2;
+            const int y=std::min(int(a.y1),int(a.y2))-2;
+            const int w=abs(int(a.x2)-int(a.x1))+5;
+            const int h=abs(int(a.y2)-int(a.y1))+5;
+            map.restoreRect(tft,x,y,w,h,sdReady);
+        }
+        change=true;
+    }
+    if(!change) {
+        if(count!=paintedCount_)change=true;
+        else for(int i=0;i<count;++i) {
+            bool found=false;
+            for(int j=0;j<paintedCount_;++j) {
+                if(samePaint(fresh[i],painted_[j])) {found=true;break;}
+            }
+            if(!found) {change=true;break;}
+        }
+    }
+    if(change)drawMarkers(tft,map);
+}
+
 bool FlightTracker::selectAt(int x,int y,const MapView& map) {
     int best=-1, bestDistance2=17*17;
     for (int i=0;i<count_;++i) {
@@ -233,4 +321,29 @@ void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     tft.setTextColor(TFT_YELLOW,TFT_DARKGREY);
     tft.setCursor(9,bottom+4);
     tft.print("Tap to return to map");
+}
+
+void FlightTracker::updateDetailsTelemetry(TFT_eSPI& tft) const {
+    if(!hasSelection())return;
+    const auto& a=records_[selected_];
+    // Keep the existing photo and credit untouched. Refresh telemetry only.
+    const int right=165;
+    tft.fillRect(right,38,tft.width()-right,100,TFT_BLACK);
+    tft.setTextSize(1);
+    int y=39;
+    auto line=[&](const char* label,const String& value) {
+        tft.setTextColor(TFT_CYAN,TFT_BLACK);
+        tft.setCursor(right,y);tft.print(label);
+        tft.setTextColor(TFT_WHITE,TFT_BLACK);
+        tft.setCursor(right,y+11);tft.print(value.substring(0,23));
+        y+=30;
+    };
+    line("REG",a.registration[0]?a.registration:"Unknown");
+    line("ALTITUDE",a.altitudeFt>=0?String(a.altitudeFt)+" ft":"Unknown");
+    line("SPEED",a.speedKt>=0?String(a.speedKt,0)+" kt":"Unknown");
+    tft.fillRect(7,165,tft.width()-7,12,TFT_BLACK);
+    tft.setCursor(7,165);
+    tft.setTextColor(TFT_CYAN,TFT_BLACK);tft.print("ICAO ");
+    tft.setTextColor(TFT_WHITE,TFT_BLACK);
+    tft.print(a.hex);tft.print("  ");tft.print(a.distanceNm,1);tft.print(" NM");
 }
