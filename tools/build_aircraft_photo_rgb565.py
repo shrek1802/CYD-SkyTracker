@@ -12,6 +12,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 
 W, H = 304, 128
+FULL_W, FULL_H = 320, 166
 PIXEL_BYTES = W * H * 2
 
 
@@ -44,6 +45,22 @@ def prepare(jpg:Path) -> bytes:
         return payload
 
 
+def prepare_full(jpg: Path) -> bytes:
+    # A separate large image avoids stretching the 304x128 detail asset.
+    # File is streamed one row at a time by ESP32; no large heap buffer.
+    with Image.open(jpg) as src:
+        src.load()
+        im = ImageOps.exif_transpose(src).convert("RGB")
+        im = ImageOps.fit(im, (FULL_W, FULL_H),
+                          method=Image.Resampling.LANCZOS,
+                          centering=(0.5, 0.5))
+        im = ImageEnhance.Contrast(im).enhance(1.08)
+        im = im.filter(ImageFilter.UnsharpMask(radius=1.0,percent=115,threshold=2))
+        pixels = encode_rgb565(im)
+        assert len(pixels) == FULL_W*FULL_H*2
+        return pixels
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument("--input",type=Path,required=True,
@@ -66,9 +83,11 @@ def main():
             continue
         raw=prepare(photo)
         (destination/(code+".rgb565")).write_bytes(raw)
+        full = prepare_full(photo)
+        (destination/(code+".full.rgb565")).write_bytes(full)
         (destination/(code+".txt")).write_bytes(credit.read_bytes())
         imported.append(code)
-        print("RGB565",code,len(raw),"bytes",flush=True)
+        print("RGB565",code,len(raw),"detail bytes /",len(full),"full-screen bytes",flush=True)
     if not imported:
         raise RuntimeError("No credited JPEGs found: cannot build SD pack")
     (destination/"README.txt").write_text(
