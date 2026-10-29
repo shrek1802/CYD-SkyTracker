@@ -53,6 +53,7 @@ void FlightTracker::begin(double homeLat,double homeLon,int radiusNm) {
     paintedCount_ = paintedTrailCount_ = 0;
     status_ = "Waiting for ADS-B";
     lastPollMs_ = 0;
+    lastGoodPollMs_ = 0;
 }
 bool FlightTracker::poll() {
     lastPollMs_ = millis();
@@ -193,6 +194,7 @@ bool FlightTracker::poll() {
             selected_=i;
     }
     hasData_=true;
+    lastGoodPollMs_=now;
     pollIntervalMs_=10000; // respectful 10-second snapshots, not streaming
     status_="Live ADS-B";
     Serial.printf("[ADSB] Confirmed %d; visible %d; next poll 10s\n",
@@ -234,12 +236,15 @@ void FlightTracker::capturePaint(const MapView& map, PaintedMarker* icons,
                  a.altitudeFt<0?TFT_CYAN:
                  a.altitudeFt<10000?TFT_YELLOW:TFT_WHITE;
         p.highlighted=(i==selected_);
+        p.kind=AircraftSymbol::fromType(a.type);
+        p.scale=AircraftSymbol::scale(p.kind,map.zoom(),p.highlighted);
     }
 }
 bool FlightTracker::samePaint(const PaintedMarker& a,const PaintedMarker& b) {
     return strcmp(a.hex,b.hex)==0&&
            a.x==b.x&&a.y==b.y&&a.heading==b.heading&&
-           a.colour==b.colour&&a.highlighted==b.highlighted;
+           a.colour==b.colour&&a.highlighted==b.highlighted&&
+           a.kind==b.kind&&a.scale==b.scale;
 }
 void FlightTracker::drawMarkers(TFT_eSPI& tft,const MapView& map) {
     PaintedMarker fresh[MAX_AIRCRAFT];
@@ -252,7 +257,8 @@ void FlightTracker::drawMarkers(TFT_eSPI& tft,const MapView& map) {
     }
     for(int i=0;i<freshCount;++i) {
         const auto& a=fresh[i];
-        AircraftIcon::draw(tft,a.x,a.y,float(a.heading),a.colour,a.highlighted);
+        AircraftIcon::draw(tft,a.x,a.y,float(a.heading),a.colour,a.highlighted,
+                           a.kind,a.scale);
     }
     paintedCount_=freshCount;
     paintedTrailCount_=segmentCount;
@@ -291,7 +297,7 @@ void FlightTracker::drawChanges(TFT_eSPI& tft,MapView& map,bool sdReady) {
             const auto& a=fresh[i];
             if(a.x+19<x||a.x-19>right||a.y+19<y||a.y-19>bottom)continue;
             AircraftIcon::draw(tft,a.x,a.y,float(a.heading),
-                               a.colour,a.highlighted);
+                               a.colour,a.highlighted,a.kind,a.scale);
         }
     };
 
