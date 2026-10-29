@@ -2,6 +2,7 @@
 #include "photo_match.h"
 #include "aircraft_type_photo.h"
 #include "ui_style.h"
+#include "detail_layout.h"
 #include "rgb565_display.h"
 #include "aircraft_icon.h"
 #include <ArduinoJson.h>
@@ -536,6 +537,57 @@ void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
     tft.print(hasPhoto()?"TAP TO ENLARGE":"TYPE SILHOUETTE");
 }
 
+void PhotoView::drawHero(TFT_eSPI& tft) const {
+    // The photo now fills almost the entire display width. Read just the
+    // visible middle 110 rows of the already installed 304x128 SD image;
+    // no additional SD conversion, framebuffer, or web request required.
+    constexpr auto box=DetailLayout::kHero;
+    tft.fillRoundRect(box.x-1,box.y-1,box.w+2,box.h+2,5,SkyUI::kPanelAlt);
+    bool drawn=false;
+    if(rgbReady_) {
+        File image=SD.open(rgbPath_,FILE_READ);
+        if(image && image.size()==kRawBytes) {
+            static uint16_t row[kRawW]; // 608-byte buffer only
+            constexpr int cropTop=(kRawH-box.h)/2;
+            drawn=true;
+            for(int index=0; index<box.h; ++index) {
+                const uint32_t sourceOffset=uint32_t(cropTop+index)*kRawW*2;
+                if(!image.seek(sourceOffset) ||
+                   image.read(reinterpret_cast<uint8_t*>(row),kRawW*2)!=kRawW*2) {
+                    drawn=false;break;
+                }
+                SkyRgb565::pushRow(tft,box.x,box.y+index,kRawW,row);
+            }
+        }
+        if(image)image.close();
+    } else if(jpeg_ && size_) {
+        drawn=drawJpegFitted(tft,jpeg_,size_,box.x,box.y,box.w,box.h);
+    }
+    if(!drawn) {
+        tft.fillRect(box.x,box.y,box.w,box.h,SkyUI::kPanelAlt);
+        // Original icon represents an unknown type, never another airframe.
+        tft.drawCircle(box.x+box.w/2,box.y+45,43,SkyUI::kBorder);
+        tft.drawCircle(box.x+box.w/2,box.y+45,30,SkyUI::kBorder);
+        drawTypeSilhouette(tft,box.x+box.w/2-46,box.y+6,92,76);
+        tft.setTextColor(SkyUI::kMuted,SkyUI::kPanelAlt);
+        tft.setTextSize(1);
+        tft.drawCentreString(status_.substring(0,43),box.x+box.w/2,
+                             box.y+84,1);
+    }
+    // Preserve photo identity: SD library images are examples of the
+    // aircraft type, not a picture of the registered flight.
+    tft.fillRect(box.x,box.y+box.h-14,box.w,14,SkyUI::kPanel);
+    tft.setTextSize(1);
+    tft.setTextColor(drawn?SkyUI::kGold:SkyUI::kMuted,SkyUI::kPanel);
+    tft.setCursor(box.x+6,box.y+box.h-11);
+    tft.print(!drawn?"NO MATCHING PHOTO":
+        representative_?"MODEL REFERENCE IMAGE":"REGISTERED AIRCRAFT");
+    tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
+    tft.setCursor(box.x+box.w-73,box.y+box.h-11);
+    tft.print("TAP PHOTO");
+    tft.drawRect(box.x,box.y,box.w,box.h,SkyUI::kBorder);
+}
+
 void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
     // 320x166 image fills nearly the whole 2.8-inch CYD; the remaining
     // area is reserved for credits and two reliable touch buttons.
@@ -558,12 +610,22 @@ void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
     }
     String full=rgbPath_;
     full.replace(".rgb565",".full.rgb565");
-    if(SD.exists(full) && renderNative(tft,full,x,y,wide,tall))return;
+    bool drawn=SD.exists(full) && renderNative(tft,full,x,y,wide,tall);
     // Backwards compatible with the previous SD pack: show the old
     // 304x128 asset centred, no bogus upscaling.
-    if(!renderNative(tft,rgbPath_,(tft.width()-kRawW)/2,y+19,kRawW,kRawH)) {
+    if(!drawn)drawn=renderNative(tft,rgbPath_,(tft.width()-kRawW)/2,
+                                y+19,kRawW,kRawH);
+    if(!drawn) {
         tft.setTextColor(SkyUI::kGold,SkyUI::kBackground);
         tft.drawCentreString("SD photo read failed",tft.width()/2,103,2);
+    } else {
+        // Clearly distinguish model examples from exact registration photos.
+        tft.fillRect(0,y+tall-14,tft.width(),14,SkyUI::kPanel);
+        tft.setTextSize(1);
+        tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+        tft.setCursor(8,y+tall-11);
+        tft.print(representative_?"Representative aircraft type photo":
+                                  "Aircraft registration photo");
     }
 }
 void PhotoView::drawCreditAt(TFT_eSPI& tft,int y) const {
