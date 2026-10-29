@@ -59,7 +59,7 @@ jobs:
             # accidentally copied/fake 'theme' with the same pixels.
             assert z.read(day[0]) != z.read('maps/night/'+day[0][len('maps/'):])
             meta=__import__('json').loads(z.read('maps/map-pack.json'))
-            assert meta['cartography']=='day-and-night-aviation-v4'
+            assert meta['cartography']=='day-and-night-radar-clean-v5'
             assert meta['themes']['night']=='/maps/night/z/x/y.rgb565'
             print('Validated', sum(n.endswith('.rgb565') for n in names),
                   'day/night offline RGB565 tiles, legacy paths retained')
