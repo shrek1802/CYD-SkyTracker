@@ -72,7 +72,11 @@ void drawRadar() {
     tracker.drawMarkers(display, mapView);
     mapView.drawFlightStatus(display, tracker.count(), tracker.status(),
                              tracker.lastGoodPollMs() ?
-                             int((millis()-tracker.lastGoodPollMs())/1000) : -1);
+                             int((millis()-tracker.lastGoodPollMs())/1000) : -1,
+                             tracker.selectedRecord() ?
+                             (tracker.selectedRecord()->flight[0] ?
+                              tracker.selectedRecord()->flight :
+                              tracker.selectedRecord()->hex) : nullptr);
 }
 
 void drawFlightScreen() {
@@ -433,7 +437,11 @@ void loop() {
             tracker.drawChanges(display, mapView, sdReady);
             mapView.drawFlightStatus(display, tracker.count(), tracker.status(),
                              tracker.lastGoodPollMs() ?
-                             int((millis()-tracker.lastGoodPollMs())/1000) : -1);
+                             int((millis()-tracker.lastGoodPollMs())/1000) : -1,
+                             tracker.selectedRecord() ?
+                             (tracker.selectedRecord()->flight[0] ?
+                              tracker.selectedRecord()->flight :
+                              tracker.selectedRecord()->hex) : nullptr);
         }
     }
     // Keep radar symbols moving between network snapshots. This does not
@@ -444,7 +452,11 @@ void loop() {
         tracker.drawChanges(display,mapView,sdReady);
         mapView.drawFlightStatus(display,tracker.count(),tracker.status(),
                     tracker.lastGoodPollMs() ?
-                    int((millis()-tracker.lastGoodPollMs())/1000) : -1);
+                    int((millis()-tracker.lastGoodPollMs())/1000) : -1,
+                             tracker.selectedRecord() ?
+                             (tracker.selectedRecord()->flight[0] ?
+                              tracker.selectedRecord()->flight :
+                              tracker.selectedRecord()->hex) : nullptr);
     }
     if (mapShowing && WiFi.status() != WL_CONNECTED &&
         millis() - lastWiFiRetry > 30000UL) {
