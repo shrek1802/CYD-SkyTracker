@@ -17,6 +17,7 @@ public:
     bool project(double lat, double lon, int& x, int& y) const;
     uint8_t zoom() const { return zoom_; }
     bool isReady() const { return ready_; }
+    bool nightMode() const { return nightMode_ && nightAvailable_; }
 private:
     void drawTiles(TFT_eSPI& tft);
     void drawUi(TFT_eSPI& tft, bool wifiConnected, bool sdReady, int missingCount);
@@ -27,6 +28,9 @@ private:
     double centerLon_ = 0;
     uint8_t zoom_ = 10;
     bool ready_ = false;
+    bool nightMode_ = false;
+    bool nightAvailable_ = false;
+    bool themeInitialised_ = false;
     int missing_ = 0;
     int width_ = 0;
     int top_ = 32;
