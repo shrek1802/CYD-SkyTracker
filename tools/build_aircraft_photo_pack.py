@@ -179,6 +179,8 @@ PINNED = {
     "B736": "File:Sas b737-600 ln-rcw arp.jpg",
     "B744": "File:Air New Zealand 747-400 sideview.jpg",
     "B752": "File:Continental b757-200 n18119 landing arp.jpg",
+    "B733": "File:Bmibaby b737-300 g-byzj arp.jpg",
+    "B78X": "File:Singapore Airlines (9V-SCC) Boeing 787-10 Dreamliner landing at Sydney Airport (3).jpg",
     "B77L": "File:Boeing 777-237-LR, Air India AN2221377.jpg",
     "CRJ7": "File:N659CA - Bombardier CRJ-700 - Delta Connection at Nashville International - June 5, 2012.jpg",
     "DHC6": "File:De Havilland Canada DHC-6-100 Twin Otter, NASA AN0727923.jpg",
