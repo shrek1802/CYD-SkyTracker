@@ -111,9 +111,16 @@ def main():
             expected = frame_image(ImageOps.exif_transpose(img).convert("RGB"),
                                    (FULL_W, FULL_H))
         decoded = decode_rgb565(full, FULL_W, FULL_H)
-        mean = max(ImageStat.Stat(ImageChops.difference(expected, decoded)).mean)
-        if mean > 5.0:
-            raise RuntimeError(f"RGB565 channels/bytes wrong for {code}: mean error {mean:.2f}")
+        delta = ImageChops.difference(expected, decoded)
+        mean = max(ImageStat.Stat(delta).mean)
+        max_error = max(channel_range[1] for channel_range in delta.getextrema())
+        # RGB565 floors 5-bit R/B and 6-bit G. A source pixel can differ
+        # by up to 7 channel levels after a CORRECT round-trip. Mean errors
+        # above five are possible for low saturated content: they are not
+        # evidence of byte-swapping. Any >7 pixel mismatch IS impossible
+        # from correct RGB565 quantisation and catches swapped RGB/BGR/bytes.
+        if max_error > 7:
+            raise RuntimeError(f"RGB565 channels/bytes wrong for {code}: max pixel channel error {max_error}")
         channel_errors[code] = round(mean, 3)
         tile = Image.new("RGB", (FULL_W*2, FULL_H+18), (16, 26, 37))
         tile.paste(expected, (0, 18))
