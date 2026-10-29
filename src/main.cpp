@@ -13,6 +13,7 @@
 #include "flights.h"
 #include "splash.h"
 #include "photo_view.h"
+#include "ui_style.h"
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -35,6 +36,7 @@ TouchPad touch;
 FlightTracker tracker;
 PhotoView photo;
 bool detailShowing = false;
+bool photoFullscreen = false;
 uint32_t splashStartMs = 0;
 constexpr uint32_t kMinSplashMs = 2500;
 void finishSplash() {
@@ -69,9 +71,28 @@ void drawRadar() {
 
 void drawFlightScreen() {
     if (!tracker.hasSelection()) return;
+    photoFullscreen = false;
     tracker.drawDetails(display);
-    photo.draw(display);
-    photo.drawCredit(display);
+    photo.drawThumbnail(display);
+    photo.drawCreditAt(display, 199);
+}
+void drawPhotoScreen() {
+    if (!tracker.hasSelection()) return;
+    photoFullscreen = true;
+    display.fillScreen(SkyUI::kBackground);
+    display.fillRect(0,0,display.width(),27,SkyUI::kPanel);
+    display.setTextSize(1);
+    display.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+    display.setCursor(8,9);
+    display.print("AIRCRAFT PHOTO");
+    const AircraftRecord* a = tracker.selectedRecord();
+    display.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    display.setCursor(124,9);
+    if(a)display.print(String(a->type).substring(0,9));
+    photo.drawFullscreen(display);
+    photo.drawCreditAt(display,199);
+    SkyUI::button(display,8,214,146,24,"< DETAILS");
+    SkyUI::button(display,164,214,display.width()-172,24,"BACK TO MAP",true);
 }
 
 void statusScreen(const String& heading, const String& line1,
@@ -258,7 +279,7 @@ void loop() {
                 } else {
                     Serial.println("Touch calibration cancelled or invalid.");
                 }
-                if (mapShowing) { detailShowing = false; drawRadar(); }
+                if (mapShowing) { detailShowing = false; photoFullscreen = false; drawRadar(); }
                 else statusScreen("Touch calibration", touch.calibrated() ? "Calibration saved" : "Calibration failed");
                 touchingLastFrame = false;
             }
@@ -282,6 +303,7 @@ void loop() {
                 photo.clear();
                 if(mapShowing) {
                     detailShowing = false;
+                    photoFullscreen = false;
                     drawRadar();
                 }
             }
@@ -322,11 +344,35 @@ void loop() {
             const int dx = touchEndX - touchStartX;
             const int dy = touchEndY - touchStartY;
             if (detailShowing) {
-                // Keep the flight selected on return so its track and outline
-                // remain visible on the map through subsequent ADS-B polls.
-                detailShowing = false;
-                photo.clear();
-                drawRadar();
+                if (photoFullscreen) {
+                    // Fullscreen photo has explicit navigation: details left,
+                    // map right. Tapping the photograph does not lose selection.
+                    if ((touchEndY >= 210 && touchEndX >= 158) ||
+                        (touchEndY < 28 && touchEndX > display.width()-72)) {
+                        detailShowing = false;
+                        photoFullscreen = false;
+                        photo.clear();
+                        drawRadar();
+                    } else if ((touchEndY >= 210 && touchEndX < 158) ||
+                               (touchEndY < 28 && touchEndX < 100)) {
+                        drawFlightScreen();
+                    }
+                } else {
+                    const bool showPhoto =
+                        (touchEndX < 167 && touchEndY >= 32 && touchEndY <= 115) ||
+                        (touchEndY >= 210 && touchEndX < 158);
+                    const bool returnToMap =
+                        (touchEndY < 31 && touchEndX >= display.width()-73) ||
+                        (touchEndY >= 210 && touchEndX >= 158);
+                    if (showPhoto) {
+                        drawPhotoScreen();
+                    } else if (returnToMap) {
+                        detailShowing = false;
+                        photoFullscreen = false;
+                        photo.clear();
+                        drawRadar();
+                    }
+                }
             } else if (abs(dx) > 22 || abs(dy) > 22) {
                 mapView.panPixels(dx, dy);
                 drawRadar();
@@ -342,6 +388,7 @@ void loop() {
                 drawRadar();
             } else if (tracker.selectAt(touchEndX, touchEndY, mapView)) {
                 detailShowing = true;
+                photoFullscreen = false;
                 photo.searching();
                 drawFlightScreen(); // Feedback while Wi-Fi image loads
                 const AircraftRecord* aircraft = tracker.selectedRecord();
@@ -361,11 +408,12 @@ void loop() {
             // A selected flight may leave the API radius. Return to the
             // map instead of showing a frozen, no-longer-updating detail page.
             detailShowing = false;
+            photoFullscreen = false;
             photo.clear();
             drawRadar();
         } else if (detailShowing) {
-            // Update numbers without clearing the entire details card/photo.
-            tracker.updateDetailsTelemetry(display);
+            // Neither screen repaints its photo every 30s.
+            if (!photoFullscreen) tracker.updateDetailsTelemetry(display);
         } else {
             // Aircraft move; the static map background stays on the screen.
             tracker.drawChanges(display, mapView, sdReady);
