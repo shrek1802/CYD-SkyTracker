@@ -15,6 +15,7 @@ public:
               bool sdOnly = false);
     void draw(TFT_eSPI& display) const; // Legacy PHOTO_TEST, keeps serial diagnosis
     void drawThumbnail(TFT_eSPI& display) const;
+    void drawHero(TFT_eSPI& display) const; // 304x110 photo-led flight card
     void drawFullscreen(TFT_eSPI& display) const;
     void drawCreditAt(TFT_eSPI& display, int y) const;
     void drawCredit(TFT_eSPI& display) const;
