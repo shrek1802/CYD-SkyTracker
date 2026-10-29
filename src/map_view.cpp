@@ -99,7 +99,7 @@ void MapView::drawRadarOverlay(TFT_eSPI& tft,int left,int top,int right,int bott
     // Map is north-up; a small compass does not obscure the live flight icons.
     if(inside(16,36)) {
         tft.setTextSize(1);
-        tft.setTextColor(SkyUI::kAccent,nightMode_?0x10A4:0xCE59);
+        tft.setTextColor(SkyUI::kAccent); // transparent over real map pixels
         tft.setCursor(12,33); tft.print("N");
     }
     if(inside(16,47)) {
