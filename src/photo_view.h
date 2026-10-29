@@ -13,8 +13,12 @@ public:
     void searching() { status_ = "Searching aircraft photo..."; }
     void load(const char* registration, const char* type, bool sdReady,
               bool sdOnly = false);
-    void draw(TFT_eSPI& display) const;
+    void draw(TFT_eSPI& display) const; // Legacy PHOTO_TEST, keeps serial diagnosis
+    void drawThumbnail(TFT_eSPI& display) const;
+    void drawFullscreen(TFT_eSPI& display) const;
+    void drawCreditAt(TFT_eSPI& display, int y) const;
     void drawCredit(TFT_eSPI& display) const;
+    bool hasPhoto() const { return rgbReady_ || (jpeg_ && size_); }
     const String& status() const { return status_; }
 private:
     uint8_t* jpeg_ = nullptr;
