@@ -1,6 +1,13 @@
 name: Build openly licensed aircraft type photo SD pack
 
 on:
+  push:
+    branches: ['development/sd-ota-foundation']
+    paths:
+      - tools/build_aircraft_photo_pack.py
+      - tools/build_aircraft_photo_rgb565.py
+      - src/aircraft_type_photo.h
+      - .github/workflows/aircraft-photo-pack.yml
   pull_request:
     paths:
       - tools/build_aircraft_photo_pack.py
@@ -77,6 +84,7 @@ jobs:
           path: |
             /tmp/SkyTracker-RGB565-SD/SkyTracker-Direct-RGB565-Aircraft-Photos.zip
             /tmp/SkyTracker-Photo-SD/aircraft-photo-contact-sheet.jpg
+            /tmp/SkyTracker-RGB565-SD/RGB565-original-vs-decoded-review.jpg
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
