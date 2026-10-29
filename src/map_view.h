@@ -11,7 +11,7 @@ public:
     // Restore only a small aircraft footprint from the existing SD map.
     // Does not clear the full screen or redraw all map tiles.
     void restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdReady);
-    void drawFlightStatus(TFT_eSPI& tft, int aircraftCount, const String& status);
+    void drawFlightStatus(TFT_eSPI& tft, int aircraftCount, const String& status, int ageSeconds = -1);
     void tap(int x, int y, int screenWidth, int screenHeight);
     void panPixels(int dx, int dy);
     bool project(double lat, double lon, int& x, int& y) const;
@@ -20,6 +20,7 @@ public:
     bool nightMode() const { return nightMode_ && nightAvailable_; }
 private:
     void drawTiles(TFT_eSPI& tft);
+    void drawRadarOverlay(TFT_eSPI& tft,int left,int top,int right,int bottom) const;
     void drawUi(TFT_eSPI& tft, bool wifiConnected, bool sdReady, int missingCount);
     void setZoom(uint8_t level);
     double homeLat_ = 0;
@@ -31,6 +32,7 @@ private:
     bool nightMode_ = false;
     bool nightAvailable_ = false;
     bool themeInitialised_ = false;
+    bool showRangeRings_ = true;
     int missing_ = 0;
     int width_ = 0;
     int top_ = 32;
