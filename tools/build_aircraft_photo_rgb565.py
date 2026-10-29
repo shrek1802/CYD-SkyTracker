@@ -31,11 +31,71 @@ def encode_rgb565(image: Image.Image) -> bytes:
     return bytes(out)
 
 
-def frame_image(image: Image.Image, size: tuple[int, int]) -> Image.Image:
-    """Preserve complete aircraft nose, tail and wings; do not crop to fill."""
-    fitted = ImageOps.contain(image, size, method=Image.Resampling.LANCZOS)
-    framed = Image.new("RGB", size, (20, 29, 39))
-    framed.paste(fitted, ((size[0]-fitted.width)//2, (size[1]-fitted.height)//2))
+# Manual photo-review framing profiles, based on the actual 136-image
+# RGB565 contact sheet. zoom, horizontal centre, vertical centre.
+# Only crop frames with clearly unnecessary surrounding sky/runway. Keep
+# actual wing tips / rotor blades intact and never alter the model identity.
+FOCUS = {
+    "A109": (1.12, .47, .53),
+    "A169": (1.14, .52, .58),
+    "A310": (1.18, .52, .56),
+    "A332": (1.12, .51, .55),
+    "A343": (1.08, .53, .51),
+    "A345": (1.10, .50, .47),
+    "AT46": (1.16, .52, .56),
+    "B06":  (1.13, .44, .54),
+    "B407": (1.15, .51, .54),
+    "B743": (1.10, .51, .57),
+    "B764": (1.18, .49, .65),
+    "B773": (1.17, .54, .55),
+    "C152": (1.43, .49, .57),
+    "C182": (1.38, .53, .55),
+    "C510": (1.46, .47, .48),
+    "C525": (1.14, .50, .54),
+    "CRJ9": (1.39, .49, .57),
+    "DH8A": (1.11, .52, .56),
+    "E35L": (1.16, .55, .56),
+    "E170": (1.18, .55, .61),
+    "GLF6": (1.23, .51, .61),
+    "GLF7": (1.13, .52, .56),
+    "LJ45": (1.12, .54, .58),
+    "PC24": (1.13, .55, .57),
+    "R66": (1.32, .49, .62),
+    "S76": (1.55, .54, .58),
+    "SB20": (1.13, .53, .56)
+}
+
+
+def frame_image(image: Image.Image, size: tuple[int, int],
+                code: str = "") -> Image.Image:
+    """Safe camera framing followed by a pixel-exact RGB565 image.
+
+    Crop input only when a reviewed focal profile exists. On landscape
+    photos, use a modest vertical crop to fill the target without making
+    the aircraft tiny; extra-wide and portrait photos are preserved whole.
+    The same focus is applied to detail and fullscreen images.
+    """
+    source = image.convert("RGB")
+    if code in FOCUS:
+        zoom, fx, fy = FOCUS[code]
+        crop_w = max(1, round(source.width / zoom))
+        crop_h = max(1, round(source.height / zoom))
+        left = min(max(0, round(source.width * fx - crop_w / 2)),
+                   source.width - crop_w)
+        top = min(max(0, round(source.height * fy - crop_h / 2)),
+                  source.height - crop_h)
+        source = source.crop((left, top, left+crop_w, top+crop_h))
+
+    aspect=source.width / source.height
+    desired=size[0]/size[1]
+    # Only shorten vertical scenery for ordinary landscape photographs.
+    # Never cut a long wingspan off the left/right edges to fill a 320px box.
+    if desired/1.27 <= aspect <= desired:
+        return ImageOps.fit(source,size,method=Image.Resampling.LANCZOS,
+                            centering=(0.5,0.52))
+    fitted = ImageOps.contain(source,size,method=Image.Resampling.LANCZOS)
+    framed = Image.new("RGB",size,(20,29,39))
+    framed.paste(fitted,((size[0]-fitted.width)//2,(size[1]-fitted.height)//2))
     return framed
 
 
@@ -60,7 +120,7 @@ def prepare(jpg:Path) -> bytes:
         im = ImageOps.exif_transpose(src).convert("RGB")
         # Natural-colour LANCZOS resizing only. The earlier contrast boost and
         # unsharp mask amplified JPEG artefacts on the small TFT.
-        im = frame_image(im, (W,H))
+        im = frame_image(im, (W,H), jpg.stem)
         payload = encode_rgb565(im)
         assert len(payload) == PIXEL_BYTES
         return payload
@@ -72,7 +132,7 @@ def prepare_full(jpg: Path) -> bytes:
     with Image.open(jpg) as src:
         src.load()
         im = ImageOps.exif_transpose(src).convert("RGB")
-        im = frame_image(im, (FULL_W, FULL_H))
+        im = frame_image(im, (FULL_W, FULL_H), jpg.stem)
         pixels = encode_rgb565(im)
         assert len(pixels) == FULL_W*FULL_H*2
         return pixels
@@ -109,7 +169,7 @@ def main():
         (destination/(code+".txt")).write_bytes(credit.read_bytes())
         with Image.open(photo) as img:
             expected = frame_image(ImageOps.exif_transpose(img).convert("RGB"),
-                                   (FULL_W, FULL_H))
+                                   (FULL_W, FULL_H), code)
         decoded = decode_rgb565(full, FULL_W, FULL_H)
         delta = ImageChops.difference(expected, decoded)
         mean = max(ImageStat.Stat(delta).mean)
