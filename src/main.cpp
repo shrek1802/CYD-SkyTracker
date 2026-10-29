@@ -382,8 +382,7 @@ void loop() {
                 tracker.deselect();
                 photo.clear();
                 startSetupPortal();
-            } else if (touchEndX >= display.width() - 46 &&
-                       touchEndY >= 32 && touchEndY < 170) {
+            } else if (SkyUI::mapControlHit(touchEndX,touchEndY,display.width())) {
                 mapView.tap(touchEndX, touchEndY, display.width(), display.height());
                 drawRadar();
             } else if (tracker.selectAt(touchEndX, touchEndY, mapView)) {
