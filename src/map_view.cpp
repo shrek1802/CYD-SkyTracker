@@ -1,5 +1,6 @@
 #include "map_view.h"
 #include "geo.h"
+#include "radar_scale.h"
 #include "ui_style.h"
 #include "rgb565_display.h"
 #include <SD.h>
@@ -29,6 +30,7 @@ void MapView::begin(double homeLat, double homeLon, uint8_t zoom) {
     centerLon_ = homeLon_;
     zoom_ = (zoom < 3 || zoom > kMaxZoom) ? 10 : zoom;
     nightMode_ = nightAvailable_ = themeInitialised_ = false;
+    showRangeRings_ = true;
     ready_ = true;
 }
 void MapView::setZoom(uint8_t value) {
@@ -73,6 +75,9 @@ void MapView::tap(int x, int y, int w, int h) {
     } else if (y <= SkyUI::kThemeY + SkyUI::kControlH && nightAvailable_) {
         nightMode_ = !nightMode_;
         Serial.printf("[MAP] Map style: %s\\n", nightMode_ ? "NIGHT" : "DAY");
+    } else if (y >= SkyUI::kRingsY - 3 &&
+               y <= SkyUI::kRingsY + SkyUI::kControlH + 3) {
+        showRangeRings_ = !showRangeRings_;
     }
 }
 bool MapView::project(double lat, double lon, int& x, int& y) const {
@@ -85,6 +90,46 @@ bool MapView::project(double lat, double lon, int& x, int& y) const {
     y = int(std::round((top_ + bottom_) * 0.5 + targetY - centerY));
     return x >= 8 && x < width_ - 8 && y >= top_ + 8 && y < bottom_ - 8;
 }
+void MapView::drawRadarOverlay(TFT_eSPI& tft,int left,int top,int right,int bottom) const {
+    if(!ready_||width_<=0||bottom_<=top_)return;
+    auto inside=[&](int x,int y) {
+        return x>=left && x<right && y>=top && y<bottom &&
+               x>=0 && x<width_ && y>=top_ && y<bottom_;
+    };
+    // Map is north-up; a small compass does not obscure the live flight icons.
+    if(inside(16,36)) {
+        tft.setTextSize(1);
+        tft.setTextColor(SkyUI::kAccent,nightMode_?0x10A4:0xCE59);
+        tft.setCursor(12,33); tft.print("N");
+    }
+    if(inside(16,47)) {
+        tft.drawFastVLine(16,44,12,SkyUI::kAccent);
+        tft.fillTriangle(12,45,20,45,16,40,SkyUI::kAccent);
+    }
+    if(!showRangeRings_)return;
+    const double homeX=Geo::longitudeToX(homeLon_,zoom_);
+    const double homeY=Geo::latitudeToY(homeLat_,zoom_);
+    const double cx=Geo::longitudeToX(centerLon_,zoom_);
+    const double cy=Geo::latitudeToY(centerLat_,zoom_);
+    const int x=int(std::lround(width_*0.5+Geo::wrapDeltaX(homeX-cx,zoom_)));
+    const int y=int(std::lround((top_+bottom_)*0.5+homeY-cy));
+    const double pxNm=RadarScale::pixelsPerNm(homeLat_,zoom_);
+    const double nm=RadarScale::niceDistance(pxNm);
+    const uint16_t ring=nightMode_?0x39A8:0xA534; // subdued grey/cyan
+    for(int multiple=1;multiple<=2;++multiple) {
+        const int radius=RadarScale::barPixels(homeLat_,zoom_,nm*multiple);
+        if(radius<=0||radius>1800)continue;
+        if(x+radius<left||x-radius>=right||
+           y+radius<top||y-radius>=bottom)continue;
+        for(int degrees=0;degrees<360;degrees+=6) {
+            const double a=double(degrees)*Geo::kPi/180.0;
+            const int px=x+int(std::lround(radius*std::cos(a)));
+            const int py=y+int(std::lround(radius*std::sin(a)));
+            if(inside(px,py))tft.drawPixel(px,py,ring);
+        }
+    }
+}
+
 void MapView::drawTiles(TFT_eSPI& tft) {
     const double cx = Geo::longitudeToX(centerLon_, zoom_);
     const double cy = Geo::latitudeToY(centerLat_, zoom_);
@@ -216,6 +261,9 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
             tft.drawFastHLine(l,gy,r-l,TFT_DARKGREY);
     }
 
+    // Range overlay must be restored BEFORE repainting aircraft icons.
+    drawRadarOverlay(tft,l,t,r,b);
+
     // Restore fixed home cross if the aircraft footprint intersects it.
     const double worldX=Geo::longitudeToX(centerLon_,zoom_);
     const double worldY=Geo::latitudeToY(centerLat_,zoom_);
@@ -230,42 +278,53 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
     }
 
     // Redraw only controls intersecting the repaired map patch.
-    for(int i=0;i<4;++i) {
+    for(int i=0;i<5;++i) {
         if(i==3 && !nightAvailable_)continue;
-        const int yy=i==3?SkyUI::kThemeY:SkyUI::kControlY[i];
+        const int yy=i==4?SkyUI::kRingsY:
+                     i==3?SkyUI::kThemeY:SkyUI::kControlY[i];
         if(r>=width_-SkyUI::kControlW-5 && b>=yy && t<=yy+SkyUI::kControlH) {
             SkyUI::button(tft,width_-SkyUI::kControlW-5,yy,
                           SkyUI::kControlW,SkyUI::kControlH,
-                          i==0?"+":(i==1?"-":i==2?"H":nightMode_?"D":"N"));
+                          i==0?"+":(i==1?"-":i==2?"H":
+                          i==3?(nightMode_?"D":"N"):(showRangeRings_?"R":"r")));
         }
     }
 }
 
-void MapView::drawFlightStatus(TFT_eSPI& tft,int count,const String& status) {
-    // Tiny, stable status areas: no map flash on 30-second ADS-B polls.
-    tft.fillRect(110,0,88,SkyUI::kTop,SkyUI::kPanel);
+void MapView::drawFlightStatus(TFT_eSPI& tft,int count,const String& status,
+                               int ageSeconds) {
+    const bool live=status.startsWith("Live");
+    // Small top-panel repairs only. No full map redraw during ADS-B polls.
+    tft.fillRect(99,0,137,SkyUI::kTop,SkyUI::kPanel);
+    tft.fillCircle(105,13,3,live?SkyUI::kGreen:SkyUI::kGold);
     tft.setTextSize(1);
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    tft.setCursor(113,10);
+    tft.print(live?"LIVE":"WAIT");
     tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
-    tft.setCursor(112,10);
-    tft.printf("%d PLANES",count);
-
-    tft.fillRect(5,bottom_+2,142,11,SkyUI::kPanel);
-    tft.setCursor(6,bottom_+3);
-    tft.setTextColor(SkyUI::kGreen,SkyUI::kPanel);
-    tft.print(status.startsWith("Live")?"LIVE ADS-B":status.substring(0,21));
+    tft.setCursor(163,10);
+    tft.printf("%d ACFT",count);
+    // One short status slot, updated by time without touching the tile area.
+    tft.fillRect(width_-69,bottom_+1,66,12,SkyUI::kPanel);
+    tft.setTextColor(live?SkyUI::kGreen:SkyUI::kGold,SkyUI::kPanel);
+    tft.setCursor(width_-68,bottom_+3);
+    if(ageSeconds<0)tft.print("WAIT DATA");
+    else if(ageSeconds>999)tft.print("STALE");
+    else tft.printf("%ds AGO",ageSeconds);
 }
 void MapView::drawUi(TFT_eSPI& tft,bool wifiConnected,bool sdReady,int missingCount) {
     tft.fillRect(0,0,width_,top_,SkyUI::kPanel);
+    tft.drawFastHLine(0,top_-1,width_,SkyUI::kAccent);
     tft.setTextSize(1);
     tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
     tft.setCursor(6,10);
     tft.print("SKYTRACKER");
-    tft.setCursor(width_-112,10);
     tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
-    tft.printf("Z%d",int(zoom_));
+    tft.setCursor(width_-83,10);
+    tft.printf("Z%u",unsigned(zoom_));
     tft.setTextColor(wifiConnected?SkyUI::kGreen:SkyUI::kGold,SkyUI::kPanel);
-    tft.setCursor(width_-76,10);
-    tft.print(wifiConnected?"ONLINE":"OFFLINE");
+    tft.setCursor(width_-39,10);
+    tft.print(wifiConnected?"NET":"OFF");
 
     for(int i=0;i<3;++i) {
         SkyUI::button(tft,width_-SkyUI::kControlW-5,SkyUI::kControlY[i],
@@ -277,16 +336,30 @@ void MapView::drawUi(TFT_eSPI& tft,bool wifiConnected,bool sdReady,int missingCo
                       SkyUI::kControlW,SkyUI::kControlH,
                       nightMode_?"D":"N");
     }
+    SkyUI::button(tft,width_-SkyUI::kControlW-5,SkyUI::kRingsY,
+                  SkyUI::kControlW,SkyUI::kControlH,
+                  showRangeRings_?"R":"r");
 
     tft.fillRect(0,bottom_,width_,tft.height()-bottom_,SkyUI::kPanel);
+    tft.setTextSize(1);
+    const double distance=RadarScale::niceDistance(
+        RadarScale::pixelsPerNm(centerLat_,zoom_));
+    const int pixels=RadarScale::barPixels(centerLat_,zoom_,distance);
+    const int bar=std::max(5,std::min(90,pixels));
+    tft.drawFastHLine(8,bottom_+8,bar,SkyUI::kAccent);
+    tft.drawFastVLine(8,bottom_+5,7,SkyUI::kAccent);
+    tft.drawFastVLine(8+bar,bottom_+5,7,SkyUI::kAccent);
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    tft.setCursor(13+bar,bottom_+4);
+    tft.print(String(distance,distance<1.0?1:0)+" NM");
     tft.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
-    tft.setCursor(width_-70,bottom_+3);
-    tft.print(sdReady?(missingCount?"MAP GAPS":nightMode_?"NIGHT MAP":"DAY MAP"):"NO SD");
-    // Display mandatory attribution on every offline-map view.
-    tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
-    tft.setCursor(6,bottom_+14);
+    tft.setCursor(6,bottom_+15);
+    // OpenStreetMap contributors are credited for all detailed map styles.
     tft.print("(c) OpenStreetMap contributors");
+    if(!sdReady||missingCount)
+        Serial.printf("[MAP] SD=%d missing=%d\n",sdReady?1:0,missingCount);
 }
+
 void MapView::draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected) {
     if (!ready_) return;
     width_ = tft.width();
@@ -312,6 +385,8 @@ void MapView::draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected) {
         for (int y=top_;y<bottom_;y+=40)
             tft.drawFastHLine(0,y,width_,TFT_DARKGREY);
     }
+
+    drawRadarOverlay(tft,0,top_,width_,bottom_);
 
     // Fixed home marker; it correctly moves when the map is panned.
     const double centerX = Geo::longitudeToX(centerLon_, zoom_);
