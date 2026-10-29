@@ -1,6 +1,11 @@
 name: Build Nottinghamshire offline SD map pack
 
 on:
+  push:
+    branches: ['development/sd-ota-foundation']
+    paths:
+      - tools/build_geofabrik_maps.py
+      - .github/workflows/offline-map-pack.yml
   pull_request:
     paths:
       - tools/build_geofabrik_maps.py
