@@ -1,6 +1,7 @@
 #include "photo_view.h"
 #include "photo_match.h"
 #include "aircraft_type_photo.h"
+#include "ui_style.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -399,4 +400,99 @@ void PhotoView::drawCredit(TFT_eSPI& tft) const {
     tft.setTextColor(TFT_WHITE,TFT_BLACK);
     String credit = artist_ + "  |  " + licence_;
     tft.print(credit.substring(0,43));
+}
+
+namespace {
+// Row-stream an SD RGB565 image at its native size with a hard byte-count
+// and bounded 640-byte RAM row. No full-screen allocation or JPEG decoder.
+bool renderNative(TFT_eSPI& tft,const String& path,int x,int y,int w,int h) {
+    File file=SD.open(path,FILE_READ);
+    if(!file || file.size()!=size_t(w)*size_t(h)*2) {
+        if(file)file.close();
+        Serial.printf("[PHOTO] Native asset unavailable %s (wanted %d bytes)\n",
+                      path.c_str(),w*h*2);
+        return false;
+    }
+    static uint16_t row[320];
+    if(w>320) {file.close();return false;}
+    bool ok=true;
+    for(int line=0;line<h;++line) {
+        if(file.read(reinterpret_cast<uint8_t*>(row),size_t(w)*2)!=size_t(w)*2) {
+            ok=false;break;
+        }
+        tft.pushImage(x,y+line,w,1,row);
+    }
+    file.close();
+    Serial.printf("[PHOTO] Fullscreen RGB565 %s (%dx%d) %s\n",
+                  path.c_str(),w,h,ok?"PASS":"SHORT READ");
+    return ok;
+}
+}
+void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
+    constexpr int x=10, y=39, w=152, h=64;
+    tft.fillRoundRect(x-2,y-2,w+4,h+4,5,SkyUI::kPanelAlt);
+    if(!rgbReady_) {
+        tft.setTextColor(SkyUI::kWhite,SkyUI::kPanelAlt);
+        tft.drawCentreString(status_.substring(0,23),x+w/2,y+24,1);
+    } else {
+        File raw=SD.open(rgbPath_,FILE_READ);
+        if(!raw||raw.size()!=kRawBytes) {
+            if(raw)raw.close();
+            tft.setTextColor(SkyUI::kGold,SkyUI::kPanelAlt);
+            tft.drawCentreString("Photo unavailable",x+w/2,y+24,1);
+        } else {
+            // 304x128 source -> 152x64 display (every second pixel/row).
+            // Never scale via a second full-size framebuffer.
+            static uint16_t sourceRow[kRawW];
+            static uint16_t outputRow[w];
+            bool ok=true;
+            for(int line=0;line<h;++line) {
+                if(!raw.seek(uint32_t(line*2*kRawW*2)) ||
+                   raw.read(reinterpret_cast<uint8_t*>(sourceRow),kRawW*2)!=size_t(kRawW*2)) {
+                    ok=false;break;
+                }
+                for(int col=0;col<w;++col)outputRow[col]=sourceRow[col*2];
+                tft.pushImage(x,y+line,w,1,outputRow);
+            }
+            raw.close();
+            if(!ok)Serial.println("[PHOTO] Thumbnail SD short read");
+        }
+    }
+    tft.fillRect(x,y+h-15,w,15,SkyUI::kPanel);
+    tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+    tft.setCursor(x+10,y+h-12);
+    tft.print("TAP TO ENLARGE");
+}
+
+void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
+    // 320x166 image fills nearly the whole 2.8-inch CYD; the remaining
+    // area is reserved for credits and two reliable touch buttons.
+    const int wide=320, tall=166, x=(tft.width()-wide)/2, y=28;
+    tft.fillRect(0,y,tft.width(),tall,SkyUI::kBackground);
+    if(!rgbReady_) {
+        tft.setTextColor(SkyUI::kGold,SkyUI::kBackground);
+        tft.drawCentreString(status_.substring(0,42),tft.width()/2,105,2);
+        return;
+    }
+    String full=rgbPath_;
+    full.replace(".rgb565",".full.rgb565");
+    if(SD.exists(full) && renderNative(tft,full,x,y,wide,tall))return;
+    // Backwards compatible with the previous SD pack: show the old
+    // 304x128 asset centred, no bogus upscaling.
+    if(!renderNative(tft,rgbPath_,(tft.width()-kRawW)/2,y+19,kRawW,kRawH)) {
+        tft.setTextColor(SkyUI::kGold,SkyUI::kBackground);
+        tft.drawCentreString("SD photo read failed",tft.width()/2,103,2);
+    }
+}
+void PhotoView::drawCreditAt(TFT_eSPI& tft,int y) const {
+    tft.fillRect(0,y,tft.width(),12,SkyUI::kBackground);
+    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
+    tft.setTextSize(1);
+    tft.setCursor(8,y+1);
+    if(!hasPhoto()) {
+        tft.print(status_.substring(0,44));
+        return;
+    }
+    const String credit=String("Photo: ")+artist_+" | "+licence_;
+    tft.print(credit.substring(0,49));
 }
