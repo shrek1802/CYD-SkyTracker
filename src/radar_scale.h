@@ -2,6 +2,7 @@
 // Geographic scale in nautical miles, derived from Web Mercator tile geometry.
 // Independent of Arduino and TFT; host-tested at multiple zoom/latitudes.
 #include <cmath>
+#include <algorithm>
 namespace RadarScale {
 inline double pixelsPerNm(double latitude,int zoom) {
     const double lat=std::max(-80.0,std::min(80.0,latitude));
