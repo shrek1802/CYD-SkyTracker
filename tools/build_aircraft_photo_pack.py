@@ -110,7 +110,7 @@ PINNED = {
     "B753": "File:Boeing 757 300 plane aircraft.jpg",
     "CRJ9": "File:Bombardier CRJ900.JPG",
     "GLF6": "File:Gulfstream G650.JPG",
-    "C17": "File:C-17 Globemaster III (2).jpg",
+    "C17": "File:Boeing C-17 Globemaster III RAF.jpg",
     "DA40": "File:Diamond DA40 (N505JF).jpg",
 }
 
