@@ -17,11 +17,39 @@ RANK = {'motorway':0,'motorway_link':0,'trunk':1,'trunk_link':1,'primary':2,
 PLACE = {'city':0,'town':1,'village':2,'suburb':3,'hamlet':4,'neighbourhood':4}
 # Use real OSM vector geometries, independently rasterized offline — never scrape
 # a commercial or OpenStreetMap public tile server.
-LAND_COLOURS = {
-    'park':'#dce8d8', 'forest':'#cbdac6', 'grass':'#e0ecdd',
-    'farmland':'#efece1', 'residential':'#edeff0',
-    'industrial':'#e2e6e9', 'commercial':'#ece9e4',
-    'water':'#b6d3df', 'building':'#d3d8dc'
+# Pre-render day and night maps from permitted Geofabrik vector extracts.
+# Night styling draws inspiration from dark cartography; no commercial tiles.
+PALETTES = {
+    'day': {
+        'background':'#f0f2ed',
+        'land': {
+            'park':'#dce8d8', 'forest':'#cbdac6', 'grass':'#e0ecdd',
+            'farmland':'#efece1', 'residential':'#edeff0',
+            'industrial':'#e2e6e9', 'commercial':'#ece9e4',
+            'water':'#b6d3df', 'building':'#d3d8dc',
+            'airport':'#d8e0e4'
+        },
+        'roads':['#e9bd91','#eecaa6','#ecd8ba','#eee2cf',
+                 '#f5eee0','#f8f7f4','#e3e7e5','#dae0dd'],
+        'road_edge':'#bdc5c7', 'waterway':'#91b8cd',
+        'rail':'#a8adb3', 'runway':'#8b9aa3', 'taxiway':'#c6ccd0',
+        'label':'#213c48', 'label_halo':'#f5f7f2',
+    },
+    'night': {
+        'background':'#172431',
+        'land': {
+            'park':'#263e39', 'forest':'#1d3934', 'grass':'#263a39',
+            'farmland':'#28352f', 'residential':'#283542',
+            'industrial':'#323843', 'commercial':'#303b47',
+            'water':'#19445d', 'building':'#344554',
+            'airport':'#293c4d'
+        },
+        'roads':['#e5ae6e','#cda879','#bb9b77','#8e92a1',
+                 '#697c90','#43576a','#37495b','#324255'],
+        'road_edge':'#1a2936', 'waterway':'#31748c',
+        'rail':'#536678', 'runway':'#a5b6bc', 'taxiway':'#596f7c',
+        'label':'#e4edf1', 'label_halo':'#172431',
+    }
 }
 LOW_ZOOM_RADIUS = {9:110,10:85,11:65,12:45}
 
@@ -36,10 +64,10 @@ class Extract(osmium.SimpleHandler):
         self.lines=[]; self.places=[]; self.areas=[]; self.bounds=bounds
     def node(self,n):
         p=n.tags.get('place'); name=n.tags.get('name')
-        if p in PLACE and name and n.location.valid():
+        if (p in PLACE or n.tags.get('aeroway')=='aerodrome') and name and n.location.valid():
             a,b=n.location.lat,n.location.lon
             if self.bounds[0]<=a<=self.bounds[2] and self.bounds[1]<=b<=self.bounds[3]:
-                self.places.append((PLACE[p],str(name),a,b))
+                self.places.append((PLACE.get(p,2),str(name),a,b))
     def way(self,w):
         road=w.tags.get('highway')
         water=w.tags.get('waterway')
@@ -48,6 +76,7 @@ class Extract(osmium.SimpleHandler):
         natural=w.tags.get('natural')
         leisure=w.tags.get('leisure')
         building=w.tags.get('building')
+        aeroway=w.tags.get('aeroway')
         try:
             pts=[(n.location.lat,n.location.lon) for n in w.nodes if n.location.valid()]
         except Exception:
@@ -67,6 +96,7 @@ class Extract(osmium.SimpleHandler):
             elif land in ('forest','wood'):kind='forest'
             elif land in ('farmland','farmyard','orchard'):kind='farmland'
             elif land in ('residential','industrial','commercial','retail'):kind='commercial' if land=='retail' else land
+            elif aeroway=='aerodrome':kind='airport'
             elif building:kind='building'
             if kind:
                 self.areas.append((kind,pts))
@@ -76,6 +106,8 @@ class Extract(osmium.SimpleHandler):
             self.lines.append(('water',{'river':0,'canal':1,'stream':2,'drain':3}[water],pts))
         elif railway in ('rail','light_rail','tram'):
             self.lines.append(('rail',0,pts))
+        elif aeroway in ('runway','taxiway'):
+            self.lines.append((aeroway,0,pts))
 
 def font(sz,bold=False):
     p='/usr/share/fonts/truetype/dejavu/DejaVuSans'+('-Bold' if bold else '')+'.ttf'
@@ -89,7 +121,8 @@ def as565(im):
         out[j]=v&255;out[j+1]=v>>8;j+=2
     return out
 
-def level(source,lat,lon,radius,z,output):
+def level(source,lat,lon,radius,z,output,style='day'):
+    palette=PALETTES[style]
     # Low zoom needs broader area coverage than the high-zoom 30 km radius;
     # this fixes missing z9/x255/y166 and /167 tile errors on the actual CYD.
     radius=max(radius,LOW_ZOOM_RADIUS.get(z,0))
@@ -100,7 +133,7 @@ def level(source,lat,lon,radius,z,output):
     count=(x1-x0+1)*(y1-y0+1)
     if count>1600:raise RuntimeError('Too many tiles; reduce radius or maxzoom')
     print(f'Zoom {z}: {count} tiles within {radius}km',flush=True)
-    images={(x,y):Image.new('RGB',(256,256),'#f0f2ed') for x in range(x0,x1+1) for y in range(y0,y1+1)}
+    images={(x,y):Image.new('RGB',(256,256),palette['background']) for x in range(x0,x1+1) for y in range(y0,y1+1)}
     draws={key:ImageDraw.Draw(img) for key,img in images.items()}
 
     def apply_to_tiles(pts,call):
@@ -116,19 +149,19 @@ def level(source,lat,lon,radius,z,output):
 
     # Soft green parks/forests, blue waterways and distinct landuse/buildings.
     priority={'residential':0,'commercial':1,'industrial':2,'farmland':3,
-              'forest':4,'grass':5,'park':6,'water':7,'building':8}
+              'forest':4,'grass':5,'park':6,'airport':7,'water':8,'building':9}
     for kind,pts in sorted(source.areas,key=lambda p:priority[p[0]]):
         if kind=='building' and z<13:continue
         if kind in ('commercial','industrial','residential') and z<11:continue
         if kind in ('grass','farmland') and z<10:continue
-        fill=LAND_COLOURS[kind]
+        fill=palette['land'][kind]
         apply_to_tiles(pts,lambda dr,line: dr.polygon(line,fill=fill))
 
     # Water/rail/roads overlay their landuse base with clear hierarchy.
-    paints=['#e9bd91','#eecaa6','#ecd8ba','#eee2cf','#f5eee0','#f8f7f4','#e3e7e5','#dae0dd']
+    paints=palette['roads']
     def line_width(rank):
         return max(1,(6-rank)+(z-12))
-    for layer,rank,way in sorted(source.lines,key=lambda e: (0 if e[0]=='water' else 1 if e[0]=='rail' else 2, -e[1])):
+    for layer,rank,way in sorted(source.lines,key=lambda e: (0 if e[0]=='water' else 1 if e[0]=='rail' else 3 if e[0] in ('runway','taxiway') else 2, -e[1])):
         if layer=='road' and ((z<=9 and rank>2) or (z==10 and rank>4) or (z==11 and rank>5) or (z==12 and rank>6) or (z>=13 and rank>6)):
             continue
         if layer=='water':
@@ -136,10 +169,15 @@ def level(source,lat,lon,radius,z,output):
             # Preserve navigable rivers/canals at broad zoom; add detail later.
             if (z<=10 and rank>1) or (z==11 and rank>2) or (z==12 and rank>2):
                 continue
-            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#91b8cd',
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill=palette['waterway'],
                                     width=(4 if rank==0 else 2) if z>=12 else 2,joint='curve'))
         elif layer=='rail' and z>=11:
-            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#a8adb3',width=2 if z>=13 else 1,joint='curve'))
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill=palette['rail'],width=2 if z>=13 else 1,joint='curve'))
+        elif layer in ('runway','taxiway') and z>=11:
+            colour=palette[layer]
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill=colour,
+                                    width=(4 if layer=='runway' else 2) if z>=12 else 1,
+                                    joint='curve'))
         elif layer=='road':
             w=line_width(rank)
             # At z13 one-pixel residential roads retain local streets but
@@ -147,7 +185,7 @@ def level(source,lat,lon,radius,z,output):
             if z>=13 and rank>=5: w=1
             casing=1 if rank>=4 else 2
             def draw_road(dr,line):
-                dr.line(line,fill='#bdc5c7',width=w+casing,joint='curve')
+                dr.line(line,fill=palette['road_edge'],width=w+casing,joint='curve')
                 dr.line(line,fill=paints[rank],width=w,joint='curve')
             apply_to_tiles(way,draw_road)
 
@@ -174,8 +212,8 @@ def level(source,lat,lon,radius,z,output):
                for key in affected for other in used[key]):continue
         for ix,iy in affected:
             draws[(ix,iy)].text((tx-ix*256,ty-iy*256),name,font=f,
-                                fill='#213c48',stroke_width=2,
-                                stroke_fill='#f5f7f2')
+                                fill=palette['label'],stroke_width=2,
+                                stroke_fill=palette['label_halo'])
             used[(ix,iy)].append(box)
     for (x,y),img in images.items():
         dest=output/str(z)/str(x%(1<<z));dest.mkdir(parents=True,exist_ok=True)
@@ -215,15 +253,22 @@ def main():
     if not handler.lines:raise RuntimeError('No road data found in requested area')
     maps=args.output/'maps';maps.mkdir(parents=True,exist_ok=True)
     counts={}
-    for z in range(args.minzoom,args.maxzoom+1):counts[z]=level(handler,args.lat,args.lon,args.radius_km,z,maps)
+    for style in ('day','night'):
+        # Keep legacy root files as day tiles; dark tiles are additional.
+        destination=maps if style=='day' else maps/style
+        destination.mkdir(parents=True,exist_ok=True)
+        counts[style]={}
+        for z in range(args.minzoom,args.maxzoom+1):
+            counts[style][z]=level(handler,args.lat,args.lon,args.radius_km,z,destination,style)
     (maps/'attribution.txt').write_text('(c) OpenStreetMap contributors | ODbL 1.0\n')
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
         'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
-        'zoom_tile_counts':counts,'cartography':'muted-aviation-v2','data_source':BASE_URL,'source_counties':counties,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
+        'zoom_tile_counts':counts,'cartography':'day-and-night-aviation-v3',
+        'themes':{'day':'/maps/z/x/y.rgb565','night':'/maps/night/z/x/y.rgb565','data_source':BASE_URL,'source_counties':counties,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
     out=args.output/'SkyTracker-Nottinghamshire-Offline-Maps.zip'
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as zf:
         for p in maps.rglob('*'):
             if p.is_file():zf.write(p,p.relative_to(args.output))
-    print('DONE:',out,'— copy /maps to SD root.',flush=True)
+    print('DONE:',out,'— copy /maps to SD root. Themes: day and night.',flush=True)
 
 if __name__=='__main__':main()
