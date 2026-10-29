@@ -6,8 +6,7 @@ import unittest
 from PIL import Image
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/"tools"))
-from build_wide_area_maps import bbox_tiles, generate_level, draw_land, draw_cities, OCEAN
-from build_geofabrik_maps import PALETTES
+from build_wide_area_maps import bbox_tiles, generate_level, draw_land, draw_cities, OCEAN, PALETTES, project
 
 
 class WideAreaMapTests(unittest.TestCase):
@@ -19,7 +18,6 @@ class WideAreaMapTests(unittest.TestCase):
             self.assertLess((x1-x0+1)*(y1-y0+1),200)
 
     def test_land_and_cities_render_without_internet(self):
-        from build_geofabrik_maps import project
         z=8
         lon=-1.1581
         lat=52.9548
