@@ -264,7 +264,9 @@ def main():
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
         'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
         'zoom_tile_counts':counts,'cartography':'day-and-night-aviation-v3',
-        'themes':{'day':'/maps/z/x/y.rgb565','night':'/maps/night/z/x/y.rgb565','data_source':BASE_URL,'source_counties':counties,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
+        'themes':{'day':'/maps/z/x/y.rgb565','night':'/maps/night/z/x/y.rgb565'},
+        'data_source':BASE_URL,'source_counties':counties,
+        'licence':'OpenStreetMap ODbL 1.0'},indent=2))
     out=args.output/'SkyTracker-Nottinghamshire-Offline-Maps.zip'
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as zf:
         for p in maps.rglob('*'):
