@@ -60,10 +60,12 @@ jobs:
           path=Path('/tmp/SkyTracker-RGB565-SD/SkyTracker-Direct-RGB565-Aircraft-Photos.zip')
           with ZipFile(path) as z:
               assert z.testzip() is None
-              photos=[n for n in z.namelist() if n.endswith('.rgb565')]
+              photos=[n for n in z.namelist() if n.endswith('.rgb565') and not n.endswith('.full.rgb565')]
               assert len(photos)>=4, photos
               for photo in photos:
                   assert len(z.read(photo))==304*128*2
+                  full=photo[:-7]+'.full.rgb565'
+                  assert len(z.read(full))==320*166*2
                   credit=z.read(photo[:-7]+'.txt').decode('utf-8').splitlines()
                   assert len(credit)>=3 and credit[0] and credit[1]
                   assert credit[2].startswith('https://commons.wikimedia.org/')
