@@ -15,7 +15,28 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 from PIL import Image, ImageDraw, ImageFont
 
-from build_geofabrik_maps import PALETTES, as565, project
+# Keep this lightweight map utility independent of pyosmium; the firmware CI
+# runs ordinary Python tests without the heavier OSM-vector build dependency.
+PALETTES = {
+    "day": {"background":"#f0f2ed","label":"#213c48","label_halo":"#f5f7f2"},
+    "night": {"background":"#172431","label":"#e4edf1","label_halo":"#172431"},
+}
+
+def project(lat,lon,z):
+    lat=max(-85.05112878,min(85.05112878,lat))
+    size=256*(1<<z)
+    return (lon+180)/360*size, (1-math.asinh(math.tan(math.radians(lat)))/math.pi)/2*size
+
+def as565(image):
+    rgb=image.convert("RGB").tobytes()
+    pixels=bytearray(256*256*2)
+    for index in range(0,len(rgb),3):
+        r,g,b=rgb[index:index+3]
+        pixel=((r&248)<<8)|((g&252)<<3)|(b>>3)
+        offset=(index//3)*2
+        pixels[offset]=pixel&255
+        pixels[offset+1]=pixel>>8
+    return pixels
 
 BASE = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/"
 SOURCE_FILES = {
