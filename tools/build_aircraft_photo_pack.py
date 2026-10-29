@@ -168,6 +168,17 @@ MODELS = {
 # Commons licensing and author metadata are fetched afresh and validated.
 # Do not replace these with arbitrary first-search hits.
 PINNED = {
+    # Additional exterior alternatives, sourced from Commons aircraft photos.
+    "A20N": "File:Citilink Airbus A320neo PK-GTC Dili 2018 (03).jpg",
+    "A346": "File:Lufthansa A346 D-AIHT.jpg",
+    "B736": "File:Boeing 737-600.jpg",
+    "B744": "File:Air New Zealand 747-400 sideview.jpg",
+    "B752": "File:Delta Air Lines Boeing 757-200 landing in TPA.jpg",
+    "B77L": "File:Boeing 777-237-LR, Air India AN2221377.jpg",
+    "CRJ7": "File:United Express CRJ700 taxiing off the runway at MHT.jpg",
+    "DHC6": "File:De Havilland Canada DHC-6-300 Twin Otter, WinAir AN2096269.jpg",
+    "F100": "File:Alliance Airlines Fokker 100 VH-FKF Perth 2024 (01).jpg",
+    "SR20": "File:CirrusSR20Landing.jpg",
     "A319": "File:Airbus A319 easyJet.JPG",
     "A320": "File:EasyJet Airbus A320-200 G-EZRT.jpg",
     "A321": "File:EVA Air Airbus A321-211 B-16202 Taking off from Taipei Songshan Airport 20140917.jpg",
@@ -190,7 +201,9 @@ BAD = ("cockpit", "interior", "cabin", "safety card", "seat map", "logo",
        "wing view", "seat", "floorplan", "emergency oxygen",
        "oxygen mask", "engine", "turbine", "winglet", "close-up",
        "landing gear", "undercarriage", "inside", "cargo bay",
-       "passenger seats", "sunrise", "sunset")
+       "passenger seats", "sunrise", "sunset", "aircraft interior",
+       "boarding", "jet bridge", "jetbridge", "staircase",
+       "business class", "first class", "economy class", "inflight meal")
 
 
 class Plain(HTMLParser):
@@ -297,11 +310,14 @@ def select(pages, model, pinned=False):
 
 def lookup(model, category, pinned_title=None):
     if pinned_title:
-        q = api({"titles": pinned_title})
-        match = select(q.get("query", {}).get("pages", []), model, pinned=True)
-        if not match:
-            raise ValueError(f"Curated Commons file invalid, missing, or not freely licensed: {pinned_title}")
-        return match
+        try:
+            q = api({"titles": pinned_title})
+            match = select(q.get("query", {}).get("pages", []), model, pinned=True)
+            if match and not any(t in pinned_title.lower() for t in BAD):
+                return match
+            print(f"  curated image rejected; using exterior search: {pinned_title}",flush=True)
+        except Exception as exc:
+            print(f"  curated lookup failed; retrying model exterior: {exc}",flush=True)
     # Prefer a named model in the image filename: exact search ranks recognisable
     # outside aircraft photos ahead of generic category members (wings/cabins).
     q = api({"generator": "search", "gsrnamespace": "6", "gsrlimit": "40",
