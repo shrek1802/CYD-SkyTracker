@@ -117,6 +117,117 @@ void MapView::drawTiles(TFT_eSPI& tft) {
     }
 }
 
+// Only repair the screen pixels obscured by aircraft from the previous poll.
+// This keeps roads/town names stable and avoids the old 30s whole-screen flash.
+void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdReady) {
+    if (!ready_ || width_ < 1 || bottom_ <= top_ || w <= 0 || h <= 0) return;
+    const int l=std::max(0,x), r=std::min(width_,x+w);
+    const int t=std::max(top_,y), b=std::min(bottom_,y+h);
+    if (l>=r || t>=b) return;
+    if (!sdReady) {
+        missingTile(tft,l,t,r-l,b-t,0,0);
+    } else {
+        const double cx=Geo::longitudeToX(centerLon_,zoom_);
+        const double cy=Geo::latitudeToY(centerLat_,zoom_);
+        const double originX=cx-double(width_)/2;
+        const double originY=cy-double(bottom_-top_)/2;
+        const int n=1<<zoom_;
+        const int tx0=int(std::floor((originX+l)/kSide));
+        const int tx1=int(std::floor((originX+r-1)/kSide));
+        const int ty0=int(std::floor((originY+(t-top_))/kSide));
+        const int ty1=int(std::floor((originY+(b-top_)-1)/kSide));
+        char path[88];
+        for (int ty=ty0;ty<=ty1;++ty) {
+            for (int tx=tx0;tx<=tx1;++tx) {
+                const int px=int(std::round(double(tx)*kSide-originX));
+                const int py=top_+int(std::round(double(ty)*kSide-originY));
+                const int dl=std::max(l,px), dt=std::max(t,py);
+                const int dr=std::min(r,px+kSide), db=std::min(b,py+kSide);
+                if(dl>=dr||dt>=db)continue;
+                if(ty<0||ty>=n) {
+                    missingTile(tft,dl,dt,dr-dl,db-dt,tx,ty);
+                    continue;
+                }
+                const int wrap=(tx%n+n)%n;
+                std::snprintf(path,sizeof(path),"/maps/%d/%d/%d.rgb565",
+                              int(zoom_),wrap,ty);
+                File tile=SD.open(path,FILE_READ);
+                if(!tile||tile.size()!=size_t(kSide*kSide*2)) {
+                    if(tile)tile.close();
+                    missingTile(tft,dl,dt,dr-dl,db-dt,tx,ty);
+                    continue;
+                }
+                const int sx=dl-px, sy=dt-py, count=dr-dl;
+                tft.startWrite();
+                bool ok=true;
+                for(int line=0;line<db-dt;++line) {
+                    const uint32_t offset=(uint32_t(sy+line)*kSide+sx)*2;
+                    if(!tile.seek(offset) ||
+                       tile.read(reinterpret_cast<uint8_t*>(rowPixels),size_t(count)*2)!=size_t(count)*2) {
+                        ok=false;
+                        break;
+                    }
+                    tft.pushImage(dl,dt+line,count,1,rowPixels);
+                }
+                tft.endWrite();
+                tile.close();
+                if(!ok)missingTile(tft,dl,dt,dr-dl,db-dt,tx,ty);
+            }
+        }
+    }
+
+    // The full map's fallback grid is only drawn when missing tiles were
+    // found at load. Restore lines in the clipped rectangle as well.
+    if(!sdReady||missing_>0) {
+        for(int gx=((l+39)/40)*40;gx<r;gx+=40)
+            tft.drawFastVLine(gx,t,b-t,TFT_DARKGREY);
+        const int first=top_+(((t-top_+39)/40)*40);
+        for(int gy=first;gy<b;gy+=40)
+            tft.drawFastHLine(l,gy,r-l,TFT_DARKGREY);
+    }
+
+    // Restore fixed home cross if the aircraft footprint intersects it.
+    const double worldX=Geo::longitudeToX(centerLon_,zoom_);
+    const double worldY=Geo::latitudeToY(centerLat_,zoom_);
+    const int hx=int(std::round(width_*0.5+
+               Geo::wrapDeltaX(Geo::longitudeToX(homeLon_,zoom_)-worldX,zoom_)));
+    const int hy=int(std::round((top_+bottom_)*0.5+
+               Geo::latitudeToY(homeLat_,zoom_)-worldY));
+    if(hx+8>=l&&hx-8<r&&hy+8>=t&&hy-8<b) {
+        tft.drawCircle(hx,hy,7,TFT_YELLOW);
+        tft.drawFastHLine(hx-4,hy,9,TFT_YELLOW);
+        tft.drawFastVLine(hx,hy-4,9,TFT_YELLOW);
+    }
+
+    // Protect the map zoom/Home controls from a plane silhouette crossing them.
+    if(r>width_-46 && t<170 && b>32) {
+        const int bx=width_-41;
+        const int ys[]={38,82,126};
+        const char* names[]={"+","-","HOME"};
+        for(int i=0;i<3;++i) {
+            if(ys[i]+37<=t||ys[i]>=b)continue;
+            tft.fillRoundRect(bx,ys[i],36,37,5,kPanel);
+            tft.setTextColor(TFT_WHITE,kPanel);
+            tft.setTextSize(1);
+            tft.setCursor(bx+(i==2?5:14),ys[i]+12);
+            tft.print(names[i]);
+        }
+    }
+}
+
+void MapView::drawFlightStatus(TFT_eSPI& tft,int count,const String& status) {
+    // Update a tiny header/footer area, never the map background.
+    tft.fillRect(110,0,width_>320?90:85,29,kPanel);
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_YELLOW,kPanel);
+    tft.setCursor(110,9);
+    tft.printf("%d planes",count);
+    tft.fillRect(0,bottom_,width_>220?205:width_,13,kPanel);
+    tft.setTextColor(TFT_WHITE,kPanel);
+    tft.setCursor(5,bottom_+1);
+    tft.print(status.substring(0,23));
+}
+
 void MapView::drawUi(TFT_eSPI& tft, bool wifiConnected, bool sdReady, int missingCount) {
     tft.fillRect(0, 0, width_, top_, kPanel);
     tft.setTextSize(1);
