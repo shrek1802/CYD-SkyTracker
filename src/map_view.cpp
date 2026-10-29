@@ -1,6 +1,7 @@
 #include "map_view.h"
 #include "geo.h"
 #include "ui_style.h"
+#include "rgb565_display.h"
 #include <SD.h>
 #include <cmath>
 #include <cstdio>
@@ -120,7 +121,7 @@ void MapView::drawTiles(TFT_eSPI& tft) {
                     break;
                 }
                 softenMapRow(rowPixels,dstW);
-                tft.pushImage(dstX, dstY + y, dstW, 1, rowPixels);
+                SkyRgb565::pushRow(tft, dstX, dstY + y, dstW, rowPixels);
             }
             tft.endWrite();
             f.close();
@@ -184,7 +185,7 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
                         break;
                     }
                     softenMapRow(rowPixels,count);
-                    tft.pushImage(dl,dt+line,count,1,rowPixels);
+                    SkyRgb565::pushRow(tft,dl,dt+line,count,rowPixels);
                 }
                 tft.endWrite();
                 tile.close();
