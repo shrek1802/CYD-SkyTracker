@@ -2,7 +2,7 @@ name: Compile CYD firmware variants
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'development/sd-ota-foundation']
   pull_request:
   workflow_dispatch:
 

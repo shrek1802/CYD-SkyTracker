@@ -9,7 +9,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
-from PIL import Image, ImageOps, ImageEnhance, ImageFilter
+from PIL import Image, ImageOps
 
 W, H = 304, 128
 FULL_W, FULL_H = 320, 166
@@ -33,13 +33,10 @@ def prepare(jpg:Path) -> bytes:
     with Image.open(jpg) as src:
         src.load()
         im = ImageOps.exif_transpose(src).convert("RGB")
-        # Use a full-width landscape crop rather than letterboxing a tiny
-        # image and wasting pixels on empty dark borders. LANCZOS resampling,
-        # mild contrast and unsharp masking preserve aircraft details at 304px.
+        # Natural-colour LANCZOS resizing only. The earlier contrast boost and
+        # unsharp mask amplified JPEG artefacts on the small TFT.
         im = ImageOps.fit(im, (W,H), method=Image.Resampling.LANCZOS,
                           centering=(0.5,0.5))
-        im = ImageEnhance.Contrast(im).enhance(1.08)
-        im = im.filter(ImageFilter.UnsharpMask(radius=1.0,percent=115,threshold=2))
         payload = encode_rgb565(im)
         assert len(payload) == PIXEL_BYTES
         return payload
@@ -54,8 +51,6 @@ def prepare_full(jpg: Path) -> bytes:
         im = ImageOps.fit(im, (FULL_W, FULL_H),
                           method=Image.Resampling.LANCZOS,
                           centering=(0.5, 0.5))
-        im = ImageEnhance.Contrast(im).enhance(1.08)
-        im = im.filter(ImageFilter.UnsharpMask(radius=1.0,percent=115,threshold=2))
         pixels = encode_rgb565(im)
         assert len(pixels) == FULL_W*FULL_H*2
         return pixels

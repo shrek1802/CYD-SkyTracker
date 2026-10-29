@@ -14,20 +14,8 @@ constexpr uint16_t kPanel = SkyUI::kPanel;
 constexpr int kSide = Geo::kTilePixels;
 constexpr int kMaxZoom = 16;
 uint16_t rowPixels[kSide]; // 512 bytes, allocated once
-// Muted cartographic palette for existing SD packs: reduce the saturated
-// magenta/cyan roads while keeping dark text/roads legible. This means the
-// user's improved 935-tile pack does NOT need rebuilding.
-inline void softenMapRow(uint16_t* pixels,int count) {
-    for(int i=0;i<count;++i) {
-        const uint16_t p=pixels[i];
-        const int r=(p>>11)&31,g=(p>>5)&63,b=p&31;
-        const int grey=(3*r+3*g+b)/10; // approx 5-bit luminance
-        const int nr=(r*2+grey*3)/5;
-        const int ng=(g*2+(grey*2)*3)/5;
-        const int nb=(b*2+grey*3)/5;
-        pixels[i]=uint16_t((nr<<11)|(ng<<5)|nb);
-    }
-}
+// Preserve source RGB565 colours; no on-device desaturation/recolouring.
+// The diagnostic tests byte order independently of the map cartography.
 void missingTile(TFT_eSPI& t, int x, int y, int w, int h, int tx, int ty) {
     const uint16_t c = ((tx + ty) & 1) ? kBg : kSea;
     t.fillRect(x, y, w, h, c);
@@ -120,7 +108,6 @@ void MapView::drawTiles(TFT_eSPI& tft) {
                     ok = false;
                     break;
                 }
-                softenMapRow(rowPixels,dstW);
                 SkyRgb565::pushRow(tft, dstX, dstY + y, dstW, rowPixels);
             }
             tft.endWrite();
@@ -184,7 +171,6 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
                         ok=false;
                         break;
                     }
-                    softenMapRow(rowPixels,count);
                     SkyRgb565::pushRow(tft,dl,dt+line,count,rowPixels);
                 }
                 tft.endWrite();

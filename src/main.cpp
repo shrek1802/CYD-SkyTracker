@@ -14,6 +14,7 @@
 #include "splash.h"
 #include "photo_view.h"
 #include "ui_style.h"
+#include "colour_diagnostic.h"
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -255,6 +256,7 @@ void setup() {
     Serial.println("/updates/firmware.bin with matching /updates/sha256.txt.");
     Serial.println("Type CAL_TOUCH to calibrate the resistive touch screen.");
     Serial.println("Type PHOTO_TEST to show /aircraft/B738.rgb565 without Wi-Fi or ADS-B.");
+    Serial.println("Type COLOUR_TEST to compare TFT and SD RGB565 colour patches.");
     Serial.println("Type VERSION to verify that PHOTO_TEST-capable firmware is installed.");
     Serial.println("Tap SKYTRACKER at top left to open Wi-Fi setup hotspot.");
 }
@@ -307,6 +309,13 @@ void loop() {
                     drawRadar();
                 }
             }
+            if (lastCommand == "COLOUR_TEST") {
+                Serial.println("[COLOUR_TEST] Compare upper TFT swatches with lower SD RGB565 swatches.");
+                const bool ok=SkyColourDiagnostic::draw(display,sdReady);
+                Serial.printf("[COLOUR_TEST] SD RGB565: %s\\n",ok?"PASS":"MISSING/ERROR");
+                delay(10000);
+                if (mapShowing) {detailShowing=false;photoFullscreen=false;drawRadar();}
+            }
             if (lastCommand == "INSTALL_SD") {
                 if (!sdReady) {
                     Serial.println("SD card unavailable; update aborted");
@@ -326,7 +335,8 @@ void loop() {
             }
             if (lastCommand.length() && lastCommand != "VERSION" &&
                 lastCommand != "HELP" && lastCommand != "PHOTO_TEST" &&
-                lastCommand != "CAL_TOUCH" && lastCommand != "INSTALL_SD") {
+                lastCommand != "CAL_TOUCH" && lastCommand != "COLOUR_TEST" &&
+                lastCommand != "INSTALL_SD") {
                 Serial.printf("[CMD] Unknown command: %s\n", lastCommand.c_str());
             }
             lastCommand = "";
