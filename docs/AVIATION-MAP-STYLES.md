@@ -49,6 +49,36 @@ The source maps are geographically scoped around Nottinghamshire,
 not a complete offline UK/world tile catalogue. Outside the installed
 area or zoom levels the original missing-tile grid still appears.
 
+
+## Wider-area zoom support (2026-10-29)
+
+Previously the downloadable night/day pack contained only **zoom 9-13**.
+Tapping minus again continued changing the map level, but no SD tiles
+were present below zoom 9, so the screen fell back to missing-map tiles.
+
+The independent wide-area builder `tools/build_wide_area_maps.py` creates
+both themes for **zoom 5-8**, covering much of Britain and the surrounding
+region. Its broader low-zoom land and major city layers come from Natural
+Earth, which is **public domain**; the existing detailed zoom 9-13 tiles
+remain based on OSM/Geofabrik and retain OpenStreetMap attribution.
+
+The new download is deliberately an **add-on map ZIP**: extract and
+**merge the maps/ folder at the microSD root**, keeping
+`maps/9` through `maps/13`, `maps/night/9` through `maps/night/13`,
+your `aircraft/` directory, and `maps/attribution.txt`.
+
+The updated firmware checks whether the centre tile exists before
+switching zoom. On an older SD pack, minus stops at zoom 9 rather
+than showing a blank map. With this additional pack, minus reaches
+zoom 5, while plus can return to zoom 13. The current pan area is
+finite: outside the generated tiles, the missing-map background remains.
+
+**Note:** At zoom 5-8 the map deliberately prioritises country coastlines
+and major city labels rather than fine residential streets, which would
+not be legible on a 320x240 display. The live ADS-B search radius is
+configured separately from map zoom and does **not** automatically
+grow when the screen zooms out.
+
 ## Future options
 
 To reproduce a provider's exact CARTO/OpenTopo appearance rather than
