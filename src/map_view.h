@@ -11,7 +11,8 @@ public:
     // Restore only a small aircraft footprint from the existing SD map.
     // Does not clear the full screen or redraw all map tiles.
     void restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdReady);
-    void drawFlightStatus(TFT_eSPI& tft, int aircraftCount, const String& status, int ageSeconds = -1);
+    void drawFlightStatus(TFT_eSPI& tft, int aircraftCount, const String& status,
+                          int ageSeconds = -1, const char* selectedFlight = nullptr);
     void tap(int x, int y, int screenWidth, int screenHeight);
     void panPixels(int dx, int dy);
     bool project(double lat, double lon, int& x, int& y) const;
