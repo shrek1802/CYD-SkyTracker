@@ -63,6 +63,11 @@ jobs:
           bash -n tools/flash-app-ubuntu.sh
           bash -n tools/test-photo-ubuntu.sh
           python -m py_compile tools/test-photo-ubuntu.py
+      - name: Test SD RGB565 display endian handling
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -Itests/fake_tft tests/test_rgb565_display.cpp -o /tmp/skytracker-display-colour-test
+          /tmp/skytracker-display-colour-test
       - name: Compile profile
         run: pio run -e ${{ matrix.target }}
       - name: Enforce OTA partition size limit
