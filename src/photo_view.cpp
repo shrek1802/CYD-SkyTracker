@@ -2,6 +2,7 @@
 #include "photo_match.h"
 #include "aircraft_type_photo.h"
 #include "ui_style.h"
+#include "rgb565_display.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -331,7 +332,7 @@ void PhotoView::draw(TFT_eSPI& tft) const {
         for(int row=0;row<kRawH;++row) {
             const size_t bytes=raw.read(reinterpret_cast<uint8_t*>(pixels),kRawW*2);
             if(bytes!=size_t(kRawW*2)) {ok=false;break;}
-            tft.pushImage(kX,kY+row,kRawW,1,pixels);
+            SkyRgb565::pushRow(tft,kX,kY+row,kRawW,pixels);
         }
         raw.close();
         Serial.printf("[PHOTO] RGB565 drawing: %s, %d rows\n",
@@ -420,7 +421,7 @@ bool renderNative(TFT_eSPI& tft,const String& path,int x,int y,int w,int h) {
         if(file.read(reinterpret_cast<uint8_t*>(row),size_t(w)*2)!=size_t(w)*2) {
             ok=false;break;
         }
-        tft.pushImage(x,y+line,w,1,row);
+        SkyRgb565::pushRow(tft,x,y+line,w,row);
     }
     file.close();
     Serial.printf("[PHOTO] Fullscreen RGB565 %s (%dx%d) %s\n",
@@ -452,7 +453,7 @@ void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
                     ok=false;break;
                 }
                 for(int col=0;col<w;++col)outputRow[col]=sourceRow[col*2];
-                tft.pushImage(x,y+line,w,1,outputRow);
+                SkyRgb565::pushRow(tft,x,y+line,w,outputRow);
             }
             raw.close();
             if(!ok)Serial.println("[PHOTO] Thumbnail SD short read");
