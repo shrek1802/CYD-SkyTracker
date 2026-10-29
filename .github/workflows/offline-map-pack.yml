@@ -1,0 +1,72 @@
+name: Build Nottinghamshire offline SD map pack
+
+on:
+  push:
+    branches: ['development/sd-ota-foundation']
+    paths:
+      - tools/build_geofabrik_maps.py
+      - .github/workflows/offline-map-pack.yml
+  pull_request:
+    paths:
+      - tools/build_geofabrik_maps.py
+      - .github/workflows/offline-map-pack.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render_offline_maps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install self-rendering libraries
+        run: python -m pip install 'osmium>=4.0,<5' 'pillow>=11,<13'
+      - name: Download legal OSM vector data and make CYD RGB565 maps
+        run: |
+          python tools/build_geofabrik_maps.py \
+            --lat 52.9548 --lon -1.1581 \
+            --radius-km 30 --minzoom 9 --maxzoom 13 \
+            --output /tmp/SkyTracker-SD
+      - name: Verify tile package and credit
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile
+          p = Path('/tmp/SkyTracker-SD/SkyTracker-Nottinghamshire-Offline-Maps.zip')
+          assert p.exists() and p.stat().st_size > 100000
+          with ZipFile(p) as z:
+            assert z.testzip() is None
+            names = z.namelist()
+            for level in range(9,14):
+              tiles = [name for name in names if name.startswith(f'maps/{level}/') and name.endswith('.rgb565')]
+              assert tiles, f'No maps at zoom {level}'
+              assert len(z.read(tiles[0])) == 131072, f'Wrong RGB565 size at zoom {level}'
+            assert 'OpenStreetMap' in z.read('maps/attribution.txt').decode()
+            day = sorted(n for n in names if n.endswith('.rgb565') and n.startswith('maps/9/'))
+            night = sorted(n for n in names if n.endswith('.rgb565') and n.startswith('maps/night/9/'))
+            assert day, 'Day map tiles missing'
+            assert len(day) == len(night), (len(day), len(night))
+            for name in day:
+              equivalent='maps/night/'+name[len('maps/'):]
+              assert equivalent in names, ('Missing night tile', equivalent)
+              assert len(z.read(equivalent)) == 131072
+            # The new night map must differ from daylight tiles, not be an
+            # accidentally copied/fake 'theme' with the same pixels.
+            assert z.read(day[0]) != z.read('maps/night/'+day[0][len('maps/'):])
+            meta=__import__('json').loads(z.read('maps/map-pack.json'))
+            assert meta['cartography']=='day-and-night-radar-clean-v5'
+            assert meta['themes']['night']=='/maps/night/z/x/y.rgb565'
+            print('Validated', sum(n.endswith('.rgb565') for n in names),
+                  'day/night offline RGB565 tiles, legacy paths retained')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTracker-Nottinghamshire-SD-Maps-z9-z13
+          path: /tmp/SkyTracker-SD/SkyTracker-Nottinghamshire-Offline-Maps.zip
+          if-no-files-found: error
+          retention-days: 14

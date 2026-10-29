@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+<title id="title">CYD SkyTracker</title><desc id="desc">Blue aircraft radar, airplane silhouette and the SkyTracker name</desc>
+<defs>
+ <radialGradient id="radar"><stop stop-color="#075b8f"/><stop offset="0.72" stop-color="#092648"/><stop offset="1" stop-color="#061428"/></radialGradient>
+ <linearGradient id="type" x1="0" x2="1"><stop stop-color="#fff"/><stop offset=".45" stop-color="#e7faff"/><stop offset=".5" stop-color="#29e2f8"/><stop offset="1" stop-color="#02a5e9"/></linearGradient>
+ <clipPath id="clip"><circle cx="256" cy="256" r="239"/></clipPath>
+</defs>
+<circle cx="256" cy="256" r="247" fill="#01101e"/>
+<circle cx="256" cy="256" r="237" fill="url(#radar)" stroke="#0ccaf4" stroke-width="10"/>
+<g clip-path="url(#clip)">
+<g fill="none" stroke="#14aade" stroke-width="2.8" opacity=".78">
+<circle cx="256" cy="190" r="52"/><circle cx="256" cy="190" r="94"/><circle cx="256" cy="190" r="137"/>
+<path d="M256 53V336M117 190H395"/>
+</g>
+<path d="M256 190L364 67A171 171 0 0 0 256 18Z" fill="#1be0ff" opacity=".2"/>
+<g fill="#1ce0fa"><circle cx="132" cy="136" r="5"/><circle cx="369" cy="113" r="5"/><circle cx="373" cy="267" r="5"/></g>
+<path d="M0 335 Q256 255 512 335 V510 H0Z" fill="#004f8a" opacity=".58"/>
+<path d="M0 338 Q256 256 512 338" fill="none" stroke="#16d3f3" stroke-width="4"/>
+<g fill="none" stroke="#1aa4e6" stroke-width="2" opacity=".45">
+<path d="M65 374Q256 329 446 374 M45 409Q256 382 465 409 M256 300V462 M176 312L133 465 M334 312L383 465"/>
+</g>
+<path d="M256 107C262 108 268 127 269 145L272 170L354 229Q360 234 355 241L269 215L267 273L289 293V303L256 295L223 303V293L245 273L243 215L157 241Q152 234 158 229L240 170L243 145C244 127 250 108 256 107Z" fill="#f7fdff" stroke="#dcecf8" stroke-width="2"/>
+<rect x="42" y="333" width="428" height="125" fill="#041627" opacity=".90"/>
+<text x="256" y="391" text-anchor="middle" fill="url(#type)" font-family="Arial,Helvetica,sans-serif" font-size="67" font-weight="900" letter-spacing="-3">SkyTracker</text>
+<text x="256" y="437" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="27" font-weight="650" letter-spacing="7">CYD</text>
+<path d="M95 430h92M325 430h92" stroke="#17ccef" stroke-width="3"/>
+</g>
+</svg>

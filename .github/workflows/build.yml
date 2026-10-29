@@ -1,0 +1,159 @@
+name: Compile CYD firmware variants
+
+on:
+  push:
+    branches: [main, 'development/sd-ota-foundation']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: skytracker-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - cyd_2432s028r
+          - cyd_2432s028r_v2
+          - cyd_2432s028r_st7789
+          - cyd_2432s024r
+          - cyd_3248s035r
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO and image tools
+        run: python -m pip install --upgrade platformio pillow
+      - name: Test map pack conversion
+        if: matrix.target == 'cyd_2432s028r'
+        run: python -m unittest discover -s tests -v
+      - name: Test geographic coordinate projection
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra tests/test_geo.cpp -o /tmp/skytracker-geo-test
+          /tmp/skytracker-geo-test
+      - name: Test aircraft icon geometry and heading
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_icon.cpp -o /tmp/skytracker-aircraft-test
+          /tmp/skytracker-aircraft-test
+      - name: Test type-aware icons and true nautical-mile range scale
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_symbol.cpp -o /tmp/skytracker-symbols
+          /tmp/skytracker-symbols
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_radar_scale.cpp -o /tmp/skytracker-radar-scale
+          /tmp/skytracker-radar-scale
+      - name: Test bounded selected-aircraft trail
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_flight_trail.cpp -o /tmp/skytracker-trail-test
+          /tmp/skytracker-trail-test
+      - name: Test motion estimates, maximum prediction age and missing-plane grace
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_flight_motion.cpp -o /tmp/skytracker-motion-test
+          /tmp/skytracker-motion-test
+      - name: Test aircraft photo card geometry and compass labels
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_detail_layout.cpp -o /tmp/skytracker-detail-layout-test
+          /tmp/skytracker-detail-layout-test
+      - name: Test exact-registration image matching
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_photo_match.cpp -o /tmp/skytracker-photo-test
+          /tmp/skytracker-photo-test
+      - name: Check type-photo lookup table and numbered Ubuntu flasher
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_type_photo.cpp -o /tmp/skytracker-photo-types
+          /tmp/skytracker-photo-types
+          bash -n tools/flash-app-ubuntu.sh
+          bash -n tools/test-photo-ubuntu.sh
+          python -m py_compile tools/test-photo-ubuntu.py
+      - name: Test SD RGB565 display endian handling
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror -Itests/fake_tft tests/test_rgb565_display.cpp -o /tmp/skytracker-display-colour-test
+          /tmp/skytracker-display-colour-test
+      - name: Compile profile
+        run: pio run -e ${{ matrix.target }}
+      - name: Enforce OTA partition size limit
+        shell: bash
+        run: |
+          FILE=".pio/build/${{ matrix.target }}/firmware.bin"
+          BYTES=$(stat -c%s "$FILE")
+          echo "Board: ${{ matrix.target }}, Firmware size: $BYTES bytes"
+          test "$BYTES" -le 1966080
+      - name: Create first-flash factory image
+        shell: bash
+        run: |
+          python -m pip install 'esptool==4.8.1'
+          TARGET="${{ matrix.target }}"
+          BUILD=".pio/build/$TARGET"
+          BOOT_APP="$HOME/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin"
+          test -f "$BOOT_APP"
+          python -m esptool --chip esp32 merge_bin \
+            -o "$BUILD/skytracker-$TARGET-factory.bin" \
+            --flash_mode dio --flash_freq 40m --flash_size 4MB \
+            0x1000 "$BUILD/bootloader.bin" \
+            0x8000 "$BUILD/partitions.bin" \
+            0xe000 "$BOOT_APP" \
+            0x10000 "$BUILD/firmware.bin"
+          python -m esptool --chip esp32 image_info "$BUILD/firmware.bin"
+          sha256sum "$BUILD/skytracker-$TARGET-factory.bin" "$BUILD/firmware.bin" > "$BUILD/checksums.txt"
+      - name: Save development firmware (NOT A RELEASE)
+        uses: actions/upload-artifact@v4
+        with:
+          name: skytracker-dev-${{ matrix.target }}
+          path: |
+            .pio/build/${{ matrix.target }}/skytracker-${{ matrix.target }}-factory.bin
+            .pio/build/${{ matrix.target }}/checksums.txt
+            .pio/build/${{ matrix.target }}/firmware.bin
+            .pio/build/${{ matrix.target }}/bootloader.bin
+            .pio/build/${{ matrix.target }}/partitions.bin
+          if-no-files-found: error
+
+  display_diagnostics:
+    name: Isolated screen check (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - diag_cyd2usb_st7789
+          - diag_cyd2usb_ili9341
+          - diag_cyd2usb_ili9341_inverted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PlatformIO
+        run: python -m pip install platformio
+      - name: Compile isolated display test
+        run: pio run -e ${{ matrix.target }}
+      - name: Name diagnostic application and checksum
+        shell: bash
+        run: |
+          cd ".pio/build/${{ matrix.target }}"
+          cp firmware.bin "display-check-${{ matrix.target }}.bin"
+          sha256sum "display-check-${{ matrix.target }}.bin" > checksum.txt
+          test $(stat -c%s "display-check-${{ matrix.target }}.bin") -le 1966080
+      - name: Upload experimental diagnostic
+        uses: actions/upload-artifact@v4
+        with:
+          name: display-check-${{ matrix.target }}
+          path: |
+            .pio/build/${{ matrix.target }}/display-check-${{ matrix.target }}.bin
+            .pio/build/${{ matrix.target }}/checksum.txt
+          if-no-files-found: error
