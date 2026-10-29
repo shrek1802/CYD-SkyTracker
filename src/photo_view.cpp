@@ -22,13 +22,56 @@ constexpr int kRawW = 304, kRawH = 128;
 constexpr size_t kRawBytes = size_t(kRawW) * size_t(kRawH) * 2;
 constexpr int kX=8, kY=32, kW=304, kH=128;
 TFT_eSPI* currentDisplay = nullptr;
+// The JPEG callback must follow the target panel: the previous fixed detail
+// viewport (8,32,304,128) silently hid photos in the other two UI views.
+int jpegX=kX, jpegY=kY, jpegW=kW, jpegH=kH;
 
 bool drawJpegBlock(int16_t x,int16_t y,uint16_t w,uint16_t h,uint16_t* bitmap) {
-    if (!currentDisplay || x >= kX+kW || y >= kY+kH) return false;
-    if (x < kX || y < kY) return false;
-    const uint16_t visibleRows = uint16_t(std::min<int>(int(h),kY+kH-y));
-    currentDisplay->pushImage(x,y,w,visibleRows,bitmap);
+    if (!currentDisplay || x < jpegX || y < jpegY ||
+        x >= jpegX+jpegW || y >= jpegY+jpegH) return false;
+    const uint16_t visibleRows = uint16_t(std::min<int>(int(h),jpegY+jpegH-y));
+    const uint16_t visibleCols = uint16_t(std::min<int>(int(w),jpegX+jpegW-x));
+    if (visibleCols != w) {
+        // JPEG MCU blocks are normally already clipped by TJpg_Decoder.
+        // Avoid treating a cropped row as tightly packed pixel data.
+        for (uint16_t line=0;line<visibleRows;++line)
+            currentDisplay->pushImage(x,y+line,visibleCols,1,bitmap+size_t(line)*w);
+    } else currentDisplay->pushImage(x,y,w,visibleRows,bitmap);
     return true;
+}
+
+// Decode a licensed JPEG into either the small card or enlarged photograph.
+// Bounded thumbnail source, no large framebuffer, and do not stretch an image
+// beyond its real resolution. This was missing for downloaded JPEGs.
+bool drawJpegFitted(TFT_eSPI& tft,const uint8_t* data,size_t bytes,
+                    int x,int y,int width,int height) {
+    if(!data || bytes<16) return false;
+    uint16_t sourceW=0,sourceH=0;
+    const int probe=TJpgDec.getJpgSize(&sourceW,&sourceH,data,uint32_t(bytes));
+    if(probe!=JDR_OK || !sourceW || !sourceH) {
+        Serial.printf("[PHOTO] JPEG header failed: %d\\n",probe); return false;
+    }
+    uint8_t scale=1;
+    while(scale<8 && (int(sourceW)>width*scale || int(sourceH)>height*scale))
+        scale*=2;
+    if(int(sourceW)>width*scale || int(sourceH)>height*scale) {
+        Serial.printf("[PHOTO] JPEG cannot fit %dx%d: %ux%u\\n",
+                      width,height,unsigned(sourceW),unsigned(sourceH));
+        return false;
+    }
+    const int imageW=(int(sourceW)+scale-1)/scale;
+    const int imageH=(int(sourceH)+scale-1)/scale;
+    const int drawX=x+(width-imageW)/2, drawY=y+(height-imageH)/2;
+    jpegX=x; jpegY=y; jpegW=width; jpegH=height;
+    currentDisplay=&tft;
+    TJpgDec.setJpgScale(scale);
+    TJpgDec.setSwapBytes(true);
+    TJpgDec.setCallback(drawJpegBlock);
+    const int result=TJpgDec.drawJpg(drawX,drawY,data,uint32_t(bytes));
+    currentDisplay=nullptr;
+    Serial.printf("[PHOTO] JPEG drawn in %dx%d card: %ux%u scale=%u, result=%d\\n",
+                  width,height,unsigned(sourceW),unsigned(sourceH),unsigned(scale),result);
+    return result==JDR_OK;
 }
 String plainText(const String& html) {
     String out;out.reserve(78);
@@ -448,7 +491,10 @@ bool renderNative(TFT_eSPI& tft,const String& path,int x,int y,int w,int h) {
 void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
     constexpr int x=10, y=39, w=152, h=64;
     tft.fillRoundRect(x-2,y-2,w+4,h+4,5,SkyUI::kPanelAlt);
-    if(!rgbReady_) {
+    if(!rgbReady_ && jpeg_ && size_) {
+        if(!drawJpegFitted(tft,jpeg_,size_,x,y,w,h-15))
+            drawTypeSilhouette(tft,x,y,w,h-14);
+    } else if(!rgbReady_) {
         drawTypeSilhouette(tft,x,y,w,h-14);
     } else {
         File raw=SD.open(rgbPath_,FILE_READ);
@@ -477,7 +523,7 @@ void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
     tft.fillRect(x,y+h-15,w,15,SkyUI::kPanel);
     tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
     tft.setCursor(x+10,y+h-12);
-    tft.print(rgbReady_?"TAP TO ENLARGE":"TYPE SILHOUETTE");
+    tft.print(hasPhoto()?"TAP TO ENLARGE":"TYPE SILHOUETTE");
 }
 
 void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
@@ -486,9 +532,18 @@ void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
     const int wide=320, tall=166, x=(tft.width()-wide)/2, y=28;
     tft.fillRect(0,y,tft.width(),tall,SkyUI::kBackground);
     if(!rgbReady_) {
+        if(jpeg_ && size_ && drawJpegFitted(tft,jpeg_,size_,x,y,wide,tall)) {
+            // A registration-specific search may be exact, while an ICAO type
+            // search is explicitly a representative model photograph.
+            tft.fillRect(0,y+tall-14,tft.width(),14,SkyUI::kPanel);
+            tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+            tft.setCursor(8,y+tall-11);
+            tft.print(representative_?"Representative aircraft type photo":"Aircraft registration photo");
+            return;
+        }
         drawTypeSilhouette(tft,0,y,tft.width(),tall-30);
         tft.setTextColor(SkyUI::kGold,SkyUI::kBackground);
-        tft.drawCentreString("NO LICENSED MODEL PHOTO ON SD",tft.width()/2,y+tall-24,1);
+        tft.drawCentreString(status_.substring(0,45),tft.width()/2,y+tall-24,1);
         return;
     }
     String full=rgbPath_;
