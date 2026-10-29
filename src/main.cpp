@@ -59,16 +59,12 @@ String lastCommand;
 
 void drawRadar() {
     if (!mapShowing) return;
+    // A full map paint is needed only after user-driven pan/zoom or returning
+    // from another page. NOT after a regular 30-second aircraft update.
+    tracker.invalidatePaint();
     mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
     tracker.drawMarkers(display, mapView);
-    display.fillRect(110, 0, display.width() > 320 ? 90 : 85, 29, 0x08A3);
-    display.setTextSize(1);
-    display.setTextColor(TFT_YELLOW, 0x08A3);
-    display.setCursor(110, 9);
-    display.printf("%d planes", tracker.count());
-    display.setTextColor(TFT_WHITE, 0x08A3);
-    display.setCursor(5, display.height() - 31);
-    display.print(tracker.status().substring(0, 23));
+    mapView.drawFlightStatus(display, tracker.count(), tracker.status());
 }
 
 void drawFlightScreen() {
@@ -367,8 +363,14 @@ void loop() {
             detailShowing = false;
             photo.clear();
             drawRadar();
-        } else if (detailShowing) drawFlightScreen();
-        else drawRadar();
+        } else if (detailShowing) {
+            // Update numbers without clearing the entire details card/photo.
+            tracker.updateDetailsTelemetry(display);
+        } else {
+            // Aircraft move; the static map background stays on the screen.
+            tracker.drawChanges(display, mapView, sdReady);
+            mapView.drawFlightStatus(display, tracker.count(), tracker.status());
+        }
     }
     if (mapShowing && WiFi.status() != WL_CONNECTED &&
         millis() - lastWiFiRetry > 30000UL) {
