@@ -61,6 +61,8 @@ jobs:
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_type_photo.cpp -o /tmp/skytracker-photo-types
           /tmp/skytracker-photo-types
           bash -n tools/flash-app-ubuntu.sh
+          bash -n tools/test-photo-ubuntu.sh
+          python -m py_compile tools/test-photo-ubuntu.py
       - name: Compile profile
         run: pio run -e ${{ matrix.target }}
       - name: Enforce OTA partition size limit
