@@ -15,7 +15,7 @@ inline Kind fromType(const char* t) {
         "R22","R44","R66","B06","B407","B429","S76","S92"};
     if(in(t,heli,sizeof(heli)/sizeof(heli[0])))return Kind::Helicopter;
     const char* const small[]={"C152","C172","C177","C182","C206","C208",
-        "C210","DA40","DA42","DA62","SR20","SR22","PA28","P28R","PA31",
+        "C210","F406","DA40","DA42","DA62","SR20","SR22","PA28","P28R","PA31",
         "PA34","PA46","PC12","DHC6"};
     if(in(t,small,sizeof(small)/sizeof(small[0])))return Kind::Light;
     const char* const biz[]={"C25A","C25B","C25C","C510","C525","C550",
