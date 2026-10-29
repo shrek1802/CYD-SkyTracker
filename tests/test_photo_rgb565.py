@@ -1,7 +1,7 @@
 import unittest
 from PIL import Image
 
-from tools.build_aircraft_photo_rgb565 import W, H, PIXEL_BYTES, FULL_W, FULL_H, encode_rgb565, prepare_full
+from tools.build_aircraft_photo_rgb565 import W, H, PIXEL_BYTES, FULL_W, FULL_H, encode_rgb565, prepare_full, decode_rgb565, frame_image
 
 
 class PhotoRgb565Tests(unittest.TestCase):
@@ -19,6 +19,18 @@ class PhotoRgb565Tests(unittest.TestCase):
         raw = encode_rgb565(im)
         self.assertEqual(len(raw), PIXEL_BYTES)
         self.assertEqual(PIXEL_BYTES, 77824)
+
+    def test_roundtrip_little_endian_not_bgr(self):
+        im = Image.new("RGB", (3, 1))
+        im.putdata([(255,0,0), (0,255,0), (0,0,255)])
+        self.assertEqual(list(decode_rgb565(encode_rgb565(im),3,1).getdata()),
+                         [(255,0,0), (0,255,0), (0,0,255)])
+
+    def test_letterbox_keeps_whole_aircraft(self):
+        im = Image.new("RGB",(400,100),(255,0,0))
+        result = frame_image(im,(320,166))
+        self.assertEqual(result.getpixel((160,83)),(255,0,0))
+        self.assertEqual(result.getpixel((160,1)),(20,29,39))
 
     def test_fullscreen_dimensions(self):
         self.assertEqual(FULL_W, 320)
