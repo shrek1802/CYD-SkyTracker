@@ -238,10 +238,84 @@ void setup() {
     Serial.println("/updates/firmware.bin with matching /updates/sha256.txt.");
     Serial.println("Type CAL_TOUCH to calibrate the resistive touch screen.");
     Serial.println("Type PHOTO_TEST to show /aircraft/B738.rgb565 without Wi-Fi or ADS-B.");
+    Serial.println("Type VERSION to verify that PHOTO_TEST-capable firmware is installed.");
     Serial.println("Tap SKYTRACKER at top left to open Wi-Fi setup hotspot.");
 }
 
 void loop() {
+    // Handle serial diagnostics before any network polling or map repaint.
+    // Prevent a busy HTTPS/SD renderer delaying PHOTO_TEST acknowledgement.
+    while (Serial.available()) {
+        char ch = static_cast<char>(Serial.read());
+        if (ch == '\r') continue;
+        if (ch == '\n') {
+            lastCommand.trim();
+            if (lastCommand == "VERSION" || lastCommand == "HELP") {
+                Serial.printf("[CMD] SkyTracker diagnostic: %s | board: %s | PHOTO_TEST=YES\n",
+                              lastCommand.c_str(), BoardProfile::id());
+                Serial.printf("[CMD] SD mounted=%s | free heap=%u\n",
+                              sdReady ? "YES" : "NO", unsigned(ESP.getFreeHeap()));
+            }
+            if (lastCommand == "CAL_TOUCH") {
+                if (touch.calibrate(display, preferences)) {
+                    Serial.println("Touch calibration saved.");
+                } else {
+                    Serial.println("Touch calibration cancelled or invalid.");
+                }
+                if (mapShowing) { detailShowing = false; drawRadar(); }
+                else statusScreen("Touch calibration", touch.calibrated() ? "Calibration saved" : "Calibration failed");
+                touchingLastFrame = false;
+            }
+            if (lastCommand == "PHOTO_TEST") {
+                Serial.println("[CMD] Received PHOTO_TEST; starting SD-only image test.");
+                // Deterministic test independent of live aircraft and HTTPS.
+                // Shows whether this CYD reads the SD asset and can paint it.
+                Serial.printf("[PHOTO_TEST] start: SD mounted=%s freeheap=%u\n",
+                              sdReady ? "YES" : "NO", unsigned(ESP.getFreeHeap()));
+                photo.load(nullptr, "B738", sdReady, true);
+                Serial.printf("[PHOTO_TEST] load result: %s\n",photo.status().c_str());
+                display.fillScreen(TFT_BLACK);
+                display.setTextSize(1);
+                display.setTextColor(TFT_CYAN,TFT_BLACK);
+                display.setCursor(7,8);
+                display.print("AIRCRAFT PHOTO SD TEST");
+                photo.draw(display);
+                photo.drawCredit(display);
+                Serial.println("[PHOTO_TEST] screen shown for 8 seconds");
+                delay(8000);
+                photo.clear();
+                if(mapShowing) {
+                    detailShowing = false;
+                    drawRadar();
+                }
+            }
+            if (lastCommand == "INSTALL_SD") {
+                if (!sdReady) {
+                    Serial.println("SD card unavailable; update aborted");
+                } else {
+                    statusScreen("Testing SD update", "Verifying firmware");
+                    String error;
+                    if (SdUpdate::installFromCard("/updates/firmware.bin",
+                                                  "/updates/sha256.txt", error)) {
+                        statusScreen("Update successful", "Rebooting");
+                        delay(700);
+                        ESP.restart();
+                    } else {
+                        Serial.println(String("SD update rejected: ") + error);
+                        statusScreen("Update rejected", error);
+                    }
+                }
+            }
+            if (lastCommand.length() && lastCommand != "VERSION" &&
+                lastCommand != "HELP" && lastCommand != "PHOTO_TEST" &&
+                lastCommand != "CAL_TOUCH" && lastCommand != "INSTALL_SD") {
+                Serial.printf("[CMD] Unknown command: %s\n", lastCommand.c_str());
+            }
+            lastCommand = "";
+        } else if (lastCommand.length() < 40) {
+            lastCommand += ch;
+        }
+    }
     if (mapShowing && touch.calibrated()) {
         int x = 0, y = 0;
         const bool pressed = touch.sample(display.width(), display.height(), x, y);
@@ -305,63 +379,6 @@ void loop() {
         dns.processNextRequest();
         web.handleClient();
     }
-    while (Serial.available()) {
-        char ch = static_cast<char>(Serial.read());
-        if (ch == '\r') continue;
-        if (ch == '\n') {
-            if (lastCommand == "CAL_TOUCH") {
-                if (touch.calibrate(display, preferences)) {
-                    Serial.println("Touch calibration saved.");
-                } else {
-                    Serial.println("Touch calibration cancelled or invalid.");
-                }
-                if (mapShowing) { detailShowing = false; drawRadar(); }
-                else statusScreen("Touch calibration", touch.calibrated() ? "Calibration saved" : "Calibration failed");
-                touchingLastFrame = false;
-            }
-            if (lastCommand == "PHOTO_TEST") {
-                // Deterministic test independent of live aircraft and HTTPS.
-                // Shows whether this CYD reads the SD asset and can paint it.
-                Serial.printf("[PHOTO_TEST] start: SD mounted=%s freeheap=%u\n",
-                              sdReady ? "YES" : "NO", unsigned(ESP.getFreeHeap()));
-                photo.load(nullptr, "B738", sdReady, true);
-                Serial.printf("[PHOTO_TEST] load result: %s\n",photo.status().c_str());
-                display.fillScreen(TFT_BLACK);
-                display.setTextSize(1);
-                display.setTextColor(TFT_CYAN,TFT_BLACK);
-                display.setCursor(7,8);
-                display.print("AIRCRAFT PHOTO SD TEST");
-                photo.draw(display);
-                photo.drawCredit(display);
-                Serial.println("[PHOTO_TEST] screen shown for 8 seconds");
-                delay(8000);
-                photo.clear();
-                if(mapShowing) {
-                    detailShowing = false;
-                    drawRadar();
-                }
-            }
-            if (lastCommand == "INSTALL_SD") {
-                if (!sdReady) {
-                    Serial.println("SD card unavailable; update aborted");
-                } else {
-                    statusScreen("Testing SD update", "Verifying firmware");
-                    String error;
-                    if (SdUpdate::installFromCard("/updates/firmware.bin",
-                                                  "/updates/sha256.txt", error)) {
-                        statusScreen("Update successful", "Rebooting");
-                        delay(700);
-                        ESP.restart();
-                    } else {
-                        Serial.println(String("SD update rejected: ") + error);
-                        statusScreen("Update rejected", error);
-                    }
-                }
-            }
-            lastCommand = "";
-        } else if (lastCommand.length() < 40) {
-            lastCommand += ch;
-        }
-    }
+
     delay(10);
 }
