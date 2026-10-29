@@ -2,6 +2,7 @@
 #include "map_view.h"
 #include "geo.h"
 #include "aircraft_icon_renderer.h"
+#include "ui_style.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -273,45 +274,64 @@ void FlightTracker::deselect() {
     selectedHex_[0] = 0;
     trail_.clear();
 }
+
 void FlightTracker::updateDetailsTelemetry(TFT_eSPI& tft) const {
     if(!hasSelection())return;
     const AircraftRecord& a=records_[selected_];
-    // The entire upper 160px (title/photo) is intentionally untouched.
-    // Only three thin rows of values are updated as ADS-B data changes.
-    tft.fillRect(0,161,tft.width(),51,TFT_BLACK);
-    tft.setTextSize(1);
-    auto item=[&](int x,int y,const char* label,const String& value) {
-        tft.setTextColor(TFT_CYAN,TFT_BLACK);
-        tft.setCursor(x,y);
-        tft.print(label);
-        tft.setTextColor(TFT_WHITE,TFT_BLACK);
-        tft.print(value.substring(0,19));
+
+    // Only the four stats cards are refreshed on the ADS-B timer. This
+    // preserves the photo, navigation and aircraft identification.
+    const struct { int x,y; const char* name; String value; } values[] = {
+        {8, 117, "ALTITUDE", a.altitudeFt >= 0 ? String(a.altitudeFt)+" ft" : String("-- ft")},
+        {164,117,"GROUND SPEED",a.speedKt >= 0 ? String(a.speedKt,0)+" kt":String("-- kt")},
+        {8, 153, "DISTANCE",String(a.distanceNm,1)+" NM"},
+        {164,153,"TRACK",String(a.heading,0)+" deg"}
     };
-    item(8,165,"REG ",a.registration[0]?a.registration:"Unknown");
-    item(165,165,"ALT ",a.altitudeFt>=0?String(a.altitudeFt)+"ft":"Unknown");
-    item(8,181,"SPD ",a.speedKt>=0?String(a.speedKt,0)+"kt":"Unknown");
-    item(165,181,"DIST ",String(a.distanceNm,1)+"NM");
-    item(8,197,"TYPE ",a.type[0]?a.type:"Unknown");
-    item(165,197,"HDG ",String(a.heading,0));
+    tft.setTextSize(1);
+    for(const auto& field : values) {
+        tft.fillRoundRect(field.x,field.y,148,32,4,SkyUI::kPanel);
+        tft.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
+        tft.setCursor(field.x+7,field.y+3);
+        tft.print(field.name);
+        tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+        tft.setCursor(field.x+7,field.y+16);
+        tft.print(field.value.substring(0,21));
+    }
 }
 void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     if(!hasSelection())return;
     const AircraftRecord& a=records_[selected_];
-    tft.fillScreen(TFT_BLACK);
-    tft.fillRect(0,0,tft.width(),30,0x08A3);
+
+    tft.fillScreen(SkyUI::kBackground);
+    tft.fillRect(0,0,tft.width(),29,SkyUI::kPanel);
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
     tft.setTextSize(2);
-    tft.setTextColor(TFT_CYAN,0x08A3);
     tft.setCursor(8,6);
-    tft.print(String(a.flight[0]?a.flight:a.hex).substring(0,11));
+    tft.print(String(a.flight[0]?a.flight:a.hex).substring(0,12));
+    SkyUI::button(tft,tft.width()-64,3,57,23,"MAP");
+
+    // The 152x64 aircraft thumbnail is rendered separately into this card.
+    tft.drawRoundRect(8,37,156,73,5,SkyUI::kBorder);
     tft.setTextSize(1);
-    tft.setTextColor(TFT_YELLOW,0x08A3);
-    tft.setCursor(tft.width()-49,11);
-    tft.print("< BACK");
+    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
+    tft.setCursor(174,43);
+    tft.print("REGISTRATION");
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kBackground);
+    tft.setCursor(174,57);
+    tft.print(String(a.registration[0]?a.registration:"Unknown").substring(0,20));
+    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
+    tft.setCursor(174,79);
+    tft.print("AIRCRAFT TYPE");
+    tft.setTextColor(SkyUI::kAccent,SkyUI::kBackground);
+    tft.setCursor(174,94);
+    tft.print(String(a.type[0]?a.type:"Unknown").substring(0,16));
 
     updateDetailsTelemetry(tft);
-
-    tft.fillRect(0,230,tft.width(),10,0x08A3);
-    tft.setTextColor(TFT_WHITE,0x08A3);
-    tft.setCursor(8,231);
-    tft.print("PHOTO IS A MODEL EXAMPLE - NOT THIS AIRFRAME");
+    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
+    tft.setTextSize(1);
+    tft.setCursor(8,189);
+    tft.print("Representative model image");
+    // Photo creator and licence appear at y=199 (drawn by PhotoView).
+    SkyUI::button(tft,8,215,146,23,"VIEW PHOTO",true);
+    SkyUI::button(tft,164,215,tft.width()-172,23,"BACK TO MAP");
 }
