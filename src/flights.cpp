@@ -56,24 +56,37 @@ void FlightTracker::begin(double homeLat,double homeLon,int radiusNm) {
 }
 bool FlightTracker::poll() {
     lastPollMs_ = millis();
-    if (WiFi.status() != WL_CONNECTED) { status_ = "Wi-Fi disconnected"; return false; }
+    if (WiFi.status() != WL_CONNECTED) {
+        status_ = "Wi-Fi disconnected";
+        pollIntervalMs_ = 20000;
+        // Keep the latest confirmed aircraft instead of flashing to empty.
+        return false;
+    }
     WiFiClientSecure client;
-    // Development build: server CA/pinned trust is not yet provisioned.
-    // Read-only aircraft locations, never accept configuration or firmware
-    // over this insecure data transport.
+    // Public read-only aircraft data; do not use this insecure connection
+    // for firmware, settings, credentials, or any executable payload.
     client.setInsecure();
-    client.setTimeout(9000);
+    client.setTimeout(7000);
     HTTPClient http;
-    http.setTimeout(9000);
+    http.setTimeout(7000);
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     String url = "https://api.adsb.lol/v2/lat/" + String(homeLat_, 5) +
                  "/lon/" + String(homeLon_, 5) + "/dist/" + String(radiusNm_);
-    if (!http.begin(client, url)) { status_ = "ADS-B connection failed"; return false; }
-    http.setUserAgent("CYD-SkyTracker-test/0.1 (github.com/shrek1802/CYD-SkyTracker)");
-    int code = http.GET();
+    if (!http.begin(client, url)) {
+        status_ = "ADS-B connection failed";
+        pollIntervalMs_ = 20000;
+        return false;
+    }
+    http.setUserAgent("CYD-SkyTracker/0.7 (github.com/shrek1802/CYD-SkyTracker)");
+    const int code = http.GET();
     if (code != HTTP_CODE_OK) {
         status_ = String("ADS-B HTTP error ") + code;
         http.end();
+        // adsb.lol rate limits vary with load: respect 429 and server stress.
+        pollIntervalMs_ = code == 429 ? 90000 :
+                          (code == 503 || code == 502 ? 45000 : 20000);
+        Serial.printf("[ADSB] HTTP=%d; next request in %u seconds\n",
+                      code, unsigned(pollIntervalMs_ / 1000));
         return false;
     }
 
@@ -91,53 +104,99 @@ bool FlightTracker::poll() {
     filter["ac"][0]["seen_pos"] = true;
 
     JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, http.getStream(),
-                                                  DeserializationOption::Filter(filter));
+    const DeserializationError error =
+        deserializeJson(doc,http.getStream(),DeserializationOption::Filter(filter));
     http.end();
     if (error) {
         status_ = String("ADS-B JSON error: ") + error.c_str();
+        pollIntervalMs_ = 20000;
         return false;
     }
-    JsonArrayConst aircraft = doc["ac"].as<JsonArrayConst>();
+    const JsonArrayConst aircraft=doc["ac"].as<JsonArrayConst>();
     if (aircraft.isNull()) {
         status_ = "ADS-B response has no aircraft list";
+        pollIntervalMs_ = 20000;
         return false;
     }
-    // Successful zero-aircraft response is not an error.
-    count_ = 0; selected_ = -1;
-    for (JsonVariantConst item : aircraft) {
-        if (count_ >= MAX_AIRCRAFT) break;
+
+    // Stage the new aircraft table independently. The old table stays
+    // visible until the entire valid response has been processed.
+    int staged=0;
+    const uint32_t now=millis();
+    for (JsonVariantConst item:aircraft) {
+        if (staged>=MAX_AIRCRAFT) break;
         if (!item["lat"].is<double>() && !item["lat"].is<float>()) continue;
         if (!item["lon"].is<double>() && !item["lon"].is<float>()) continue;
-        if (!item["seen_pos"].isNull() &&
-            item["seen_pos"].as<float>() > 45.0f) continue;
-        AircraftRecord& a = records_[count_];
-        a = AircraftRecord{};
-        a.lat = item["lat"].as<double>();
-        a.lon = item["lon"].as<double>();
-        if (!isfinite(a.lat) || !isfinite(a.lon) || fabs(a.lat) > 85.05 ||
-            fabs(a.lon) > 180.0) continue;
-        a.distanceNm = distanceNm(homeLat_, homeLon_, a.lat, a.lon);
-        if (a.distanceNm > radiusNm_ + 1.0f) continue;
-        a.bearing = bearingDeg(homeLat_,homeLon_,a.lat,a.lon);
-        copyText(a.hex,sizeof(a.hex),item["hex"] | "");
-        copyText(a.flight,sizeof(a.flight),item["flight"] | "");
-        copyText(a.registration,sizeof(a.registration),item["r"] | "");
-        copyText(a.type,sizeof(a.type),item["t"] | "");
-        // Preserve a tapped aircraft through the next API refresh.
-        // Earlier builds reset selection to -1 every 30 seconds.
-        if (selectedHex_[0] && strcmp(a.hex, selectedHex_) == 0) {
-            selected_ = count_;
-            trail_.append(a.lat, a.lon);
+        const float seen=item["seen_pos"] | 0.0f;
+        if (!std::isfinite(seen) || seen<0 || seen>45.0f) continue;
+        AircraftRecord incoming{};
+        incoming.lat=item["lat"].as<double>();
+        incoming.lon=item["lon"].as<double>();
+        if (!std::isfinite(incoming.lat) || !std::isfinite(incoming.lon) ||
+            std::fabs(incoming.lat)>85.05 || std::fabs(incoming.lon)>180.0) continue;
+        if (distanceNm(homeLat_,homeLon_,incoming.lat,incoming.lon)>radiusNm_+1.0f)
+            continue;
+        copyText(incoming.hex,sizeof(incoming.hex),item["hex"] | "");
+        if (!incoming.hex[0]) continue;
+        copyText(incoming.flight,sizeof(incoming.flight),item["flight"] | "");
+        copyText(incoming.registration,sizeof(incoming.registration),item["r"] | "");
+        copyText(incoming.type,sizeof(incoming.type),item["t"] | "");
+        incoming.heading=item["track"] | 0.0f;
+        incoming.speedKt=item["gs"] | -1.0f;
+        if (item["alt_baro"].is<int>())
+            incoming.altitudeFt=item["alt_baro"].as<int>();
+        else if (item["alt_geom"].is<int>())
+            incoming.altitudeFt=item["alt_geom"].as<int>();
+        incoming.distanceNm=distanceNm(homeLat_,homeLon_,incoming.lat,incoming.lon);
+        incoming.bearing=bearingDeg(homeLat_,homeLon_,incoming.lat,incoming.lon);
+        incoming.lastConfirmedMs=now;
+        incoming.fixMs=now-uint32_t(seen*1000.0f);
+
+        // Retain known identifying fields if an API snapshot omits them.
+        for (int previous=0;previous<count_;++previous) {
+            const AircraftRecord& before=records_[previous];
+            if (strcmp(before.hex,incoming.hex)!=0) continue;
+            if(!incoming.flight[0])
+                copyText(incoming.flight,sizeof(incoming.flight),before.flight);
+            if(!incoming.registration[0])
+                copyText(incoming.registration,sizeof(incoming.registration),before.registration);
+            if(!incoming.type[0])
+                copyText(incoming.type,sizeof(incoming.type),before.type);
+            break;
         }
-        a.heading = item["track"] | 0.0f;
-        a.speedKt = item["gs"] | -1.0f;
-        if (item["alt_baro"].is<int>()) a.altitudeFt = item["alt_baro"].as<int>();
-        else if (item["alt_geom"].is<int>()) a.altitudeFt = item["alt_geom"].as<int>();
-        ++count_;
+        incoming_[staged++]=incoming;
+        if (selectedHex_[0] && strcmp(incoming.hex,selectedHex_)==0)
+            trail_.append(incoming.lat,incoming.lon);
     }
-    hasData_ = true;
-    status_ = "Live ADS-B";
+
+    const int confirmed=staged;
+    // A plane that is briefly absent from one API snapshot should not blink
+    // off the map. Keep it for up to 45 seconds since its last confirmation.
+    for (int old=0;old<count_ && staged<MAX_AIRCRAFT;++old) {
+        const AircraftRecord& before=records_[old];
+        if (!before.hex[0] ||
+            !FlightMotion::stillVisible(now,before.lastConfirmedMs)) continue;
+        bool present=false;
+        for (int n=0;n<staged;++n) {
+            if(strcmp(before.hex,incoming_[n].hex)==0) {
+                present=true;break;
+            }
+        }
+        if(!present) incoming_[staged++]=before;
+    }
+
+    count_=staged;
+    selected_=-1;
+    for (int i=0;i<count_;++i) {
+        records_[i]=incoming_[i];
+        if (selectedHex_[0] && strcmp(selectedHex_,records_[i].hex)==0)
+            selected_=i;
+    }
+    hasData_=true;
+    pollIntervalMs_=10000; // respectful 10-second snapshots, not streaming
+    status_="Live ADS-B";
+    Serial.printf("[ADSB] Confirmed %d; visible %d; next poll 10s\n",
+                  confirmed,count_);
     return true;
 }
 void FlightTracker::capturePaint(const MapView& map, PaintedMarker* icons,
