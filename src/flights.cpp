@@ -273,77 +273,45 @@ void FlightTracker::deselect() {
     selectedHex_[0] = 0;
     trail_.clear();
 }
-void FlightTracker::drawDetails(TFT_eSPI& tft) const {
-    if (!hasSelection()) return;
-    const AircraftRecord& a = records_[selected_];
-    tft.fillScreen(TFT_BLACK);
-    tft.fillRect(0,0,tft.width(),32,0x08A3);
-    tft.setTextColor(TFT_CYAN,0x08A3);
-    tft.setTextSize(2);
-    tft.setCursor(7,6);
-    tft.print(a.flight[0] ? a.flight : a.hex);
-    tft.setTextSize(1);
-    tft.setTextColor(TFT_WHITE,TFT_BLACK);
-
-    // Photo panel lives at x5..161/y37..142. Keep key numbers on the
-    // right and licensing credit visible at the bottom of this 320x240 CYD.
-    const int right = 165;
-    int y = 39;
-    auto line = [&](const char* label, const String& value) {
-        tft.setTextColor(TFT_CYAN,TFT_BLACK);
-        tft.setCursor(right,y);
-        tft.print(label);
-        tft.setTextColor(TFT_WHITE,TFT_BLACK);
-        tft.setCursor(right,y+11);
-        tft.print(value.substring(0,23));
-        y += 30;
-    };
-    line("REG",a.registration[0] ? a.registration : "Unknown");
-    line("ALTITUDE",a.altitudeFt >= 0 ? String(a.altitudeFt)+" ft" : "Unknown");
-    line("SPEED",a.speedKt >= 0 ? String(a.speedKt,0)+" kt" : "Unknown");
-
-    tft.setTextSize(1);
-    tft.setCursor(7,150);
-    tft.setTextColor(TFT_CYAN,TFT_BLACK);
-    tft.print("TYPE ");
-    tft.setTextColor(TFT_WHITE,TFT_BLACK);
-    tft.print(a.type[0]?a.type:"Not identified");
-    tft.setCursor(7,165);
-    tft.setTextColor(TFT_CYAN,TFT_BLACK);
-    tft.print("ICAO ");
-    tft.setTextColor(TFT_WHITE,TFT_BLACK);
-    tft.print(a.hex);
-    tft.print("  ");
-    tft.print(a.distanceNm,1);
-    tft.print(" NM");
-    const int bottom=tft.height()-17;
-    tft.fillRect(0,bottom,tft.width(),17,TFT_DARKGREY);
-    tft.setTextColor(TFT_YELLOW,TFT_DARKGREY);
-    tft.setCursor(9,bottom+4);
-    tft.print("Tap to return to map");
-}
-
 void FlightTracker::updateDetailsTelemetry(TFT_eSPI& tft) const {
     if(!hasSelection())return;
-    const auto& a=records_[selected_];
-    // Keep the existing photo and credit untouched. Refresh telemetry only.
-    const int right=165;
-    tft.fillRect(right,38,tft.width()-right,100,TFT_BLACK);
+    const AircraftRecord& a=records_[selected_];
+    // The entire upper 160px (title/photo) is intentionally untouched.
+    // Only three thin rows of values are updated as ADS-B data changes.
+    tft.fillRect(0,161,tft.width(),51,TFT_BLACK);
     tft.setTextSize(1);
-    int y=39;
-    auto line=[&](const char* label,const String& value) {
+    auto item=[&](int x,int y,const char* label,const String& value) {
         tft.setTextColor(TFT_CYAN,TFT_BLACK);
-        tft.setCursor(right,y);tft.print(label);
+        tft.setCursor(x,y);
+        tft.print(label);
         tft.setTextColor(TFT_WHITE,TFT_BLACK);
-        tft.setCursor(right,y+11);tft.print(value.substring(0,23));
-        y+=30;
+        tft.print(value.substring(0,19));
     };
-    line("REG",a.registration[0]?a.registration:"Unknown");
-    line("ALTITUDE",a.altitudeFt>=0?String(a.altitudeFt)+" ft":"Unknown");
-    line("SPEED",a.speedKt>=0?String(a.speedKt,0)+" kt":"Unknown");
-    tft.fillRect(7,165,tft.width()-7,12,TFT_BLACK);
-    tft.setCursor(7,165);
-    tft.setTextColor(TFT_CYAN,TFT_BLACK);tft.print("ICAO ");
-    tft.setTextColor(TFT_WHITE,TFT_BLACK);
-    tft.print(a.hex);tft.print("  ");tft.print(a.distanceNm,1);tft.print(" NM");
+    item(8,165,"REG ",a.registration[0]?a.registration:"Unknown");
+    item(165,165,"ALT ",a.altitudeFt>=0?String(a.altitudeFt)+"ft":"Unknown");
+    item(8,181,"SPD ",a.speedKt>=0?String(a.speedKt,0)+"kt":"Unknown");
+    item(165,181,"DIST ",String(a.distanceNm,1)+"NM");
+    item(8,197,"TYPE ",a.type[0]?a.type:"Unknown");
+    item(165,197,"HDG ",String(a.heading,0));
+}
+void FlightTracker::drawDetails(TFT_eSPI& tft) const {
+    if(!hasSelection())return;
+    const AircraftRecord& a=records_[selected_];
+    tft.fillScreen(TFT_BLACK);
+    tft.fillRect(0,0,tft.width(),30,0x08A3);
+    tft.setTextSize(2);
+    tft.setTextColor(TFT_CYAN,0x08A3);
+    tft.setCursor(8,6);
+    tft.print(String(a.flight[0]?a.flight:a.hex).substring(0,11));
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_YELLOW,0x08A3);
+    tft.setCursor(tft.width()-49,11);
+    tft.print("< BACK");
+
+    updateDetailsTelemetry(tft);
+
+    tft.fillRect(0,230,tft.width(),10,0x08A3);
+    tft.setTextColor(TFT_WHITE,0x08A3);
+    tft.setCursor(8,231);
+    tft.print("PHOTO IS A MODEL EXAMPLE - NOT THIS AIRFRAME");
 }
