@@ -103,6 +103,13 @@ bool FlightTracker::poll() {
     filter["ac"][0]["alt_baro"] = true;
     filter["ac"][0]["alt_geom"] = true;
     filter["ac"][0]["seen_pos"] = true;
+    filter["ac"][0]["squawk"] = true;
+    filter["ac"][0]["emergency"] = true;
+    filter["ac"][0]["category"] = true;
+    filter["ac"][0]["baro_rate"] = true;
+    filter["ac"][0]["geom_rate"] = true;
+    filter["ac"][0]["nav_altitude_mcp"] = true;
+    filter["ac"][0]["nav_heading"] = true;
 
     JsonDocument doc;
     const DeserializationError error =
@@ -144,6 +151,15 @@ bool FlightTracker::poll() {
         copyText(incoming.type,sizeof(incoming.type),item["t"] | "");
         incoming.heading=item["track"] | 0.0f;
         incoming.speedKt=item["gs"] | -1.0f;
+        copyText(incoming.squawk,sizeof(incoming.squawk),item["squawk"] | "");
+        copyText(incoming.emergency,sizeof(incoming.emergency),item["emergency"] | "");
+        copyText(incoming.category,sizeof(incoming.category),item["category"] | "");
+        if(item["alt_geom"].is<int>())incoming.geometricAltitudeFt=item["alt_geom"].as<int>();
+        if(item["baro_rate"].is<int>())incoming.verticalRateFpm=item["baro_rate"].as<int>();
+        else if(item["geom_rate"].is<int>())incoming.verticalRateFpm=item["geom_rate"].as<int>();
+        if(item["nav_altitude_mcp"].is<int>())incoming.selectedAltitudeFt=item["nav_altitude_mcp"].as<int>();
+        if(item["nav_heading"].is<float>()||item["nav_heading"].is<double>())
+            incoming.navHeading=item["nav_heading"].as<float>();
         if (item["alt_baro"].is<int>())
             incoming.altitudeFt=item["alt_baro"].as<int>();
         else if (item["alt_geom"].is<int>())
@@ -163,6 +179,12 @@ bool FlightTracker::poll() {
                 copyText(incoming.registration,sizeof(incoming.registration),before.registration);
             if(!incoming.type[0])
                 copyText(incoming.type,sizeof(incoming.type),before.type);
+            if(!incoming.squawk[0])
+                copyText(incoming.squawk,sizeof(incoming.squawk),before.squawk);
+            if(!incoming.emergency[0])
+                copyText(incoming.emergency,sizeof(incoming.emergency),before.emergency);
+            if(!incoming.category[0])
+                copyText(incoming.category,sizeof(incoming.category),before.category);
             break;
         }
         incoming_[staged++]=incoming;
@@ -418,6 +440,53 @@ void FlightTracker::updateDetailsTelemetry(TFT_eSPI& tft) const {
         tft.print(card.value.substring(0,17));
     }
 }
+
+void FlightTracker::drawExtraDetails(TFT_eSPI& tft) const {
+    if(!hasSelection())return;
+    const AircraftRecord& a=records_[selected_];
+    tft.fillScreen(SkyUI::kBackground);
+    tft.fillRect(0,0,tft.width(),28,SkyUI::kPanel);
+    tft.drawFastHLine(0,27,tft.width(),SkyUI::kAccent);
+    tft.setTextSize(1);
+    tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
+    tft.setCursor(8,9);tft.print("FLIGHT DATA");
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    tft.setCursor(103,9);
+    tft.print(String(a.flight[0]?a.flight:a.hex).substring(0,18));
+
+    // Optional fields are "--" when unavailable; never invent values.
+    const String emergency=(a.emergency[0]&&strcmp(a.emergency,"none")!=0)?
+                           String(a.emergency):String("NONE");
+    const char* labels[]={
+        "ICAO HEX","TYPE","SQUAWK","CATEGORY","CLIMB/DESC","SEL ALT",
+        "GEO ALT","NAV HDG","BEARING","DISTANCE","LATITUDE","LONGITUDE",
+        "POS AGE","EMERGENCY"
+    };
+    const String values[]={
+        String(a.hex),a.type[0]?String(a.type):String("--"),
+        a.squawk[0]?String(a.squawk):String("--"),
+        a.category[0]?String(a.category):String("--"),
+        a.verticalRateFpm==-99999?String("--"):String(a.verticalRateFpm)+" FPM",
+        a.selectedAltitudeFt==-99999?String("--"):String(a.selectedAltitudeFt)+" FT",
+        a.geometricAltitudeFt==-99999?String("--"):String(a.geometricAltitudeFt)+" FT",
+        a.navHeading<0?String("--"):String(a.navHeading,0)+" DEG",
+        String(a.bearing)+" DEG",String(a.distanceNm,1)+" NM",
+        String(a.lat,5),String(a.lon,5),
+        String((millis()-a.fixMs)/1000)+" SEC",emergency
+    };
+    for(int i=0;i<14;++i) {
+        const int x=8+(i%2)*156,y=33+(i/2)*25;
+        tft.fillRoundRect(x,y,148,22,3,SkyUI::kPanel);
+        tft.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
+        tft.setCursor(x+5,y+2);tft.print(labels[i]);
+        tft.setTextColor(i==13&&emergency!="NONE"?SkyUI::kGold:
+                         SkyUI::kWhite,SkyUI::kPanel);
+        tft.setCursor(x+5,y+12);tft.print(values[i].substring(0,23));
+    }
+    SkyUI::button(tft,8,214,146,24,"< DETAILS",true);
+    SkyUI::button(tft,164,214,tft.width()-172,24,"BACK TO MAP");
+}
+
 void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     if (!hasSelection()) return;
     const AircraftRecord& a=records_[selected_];
@@ -439,7 +508,7 @@ void FlightTracker::drawDetails(TFT_eSPI& tft) const {
 
     const auto* model=AircraftTypePhoto::find(a.type);
     const String modelText=model?String(model->model):
-        (a.type[0] ? String("ICAO ")+a.type : String("AIRCRAFT TYPE UNKNOWN"));
+        (a.type[0] ? String("UNVERIFIED TYPE: ")+a.type : String("AIRCRAFT TYPE UNKNOWN"));
     tft.setTextColor(SkyUI::kAccent,SkyUI::kBackground);
     tft.setCursor(9,34);
     // 50 characters at 6px wide fit the tested 320px display.
@@ -450,7 +519,7 @@ void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     updateDetailsTelemetry(tft);
     SkyUI::button(tft,DetailLayout::kPhotoButton.x,DetailLayout::kPhotoButton.y,
                   DetailLayout::kPhotoButton.w,DetailLayout::kPhotoButton.h,
-                  "ENLARGE PHOTO",true);
+                  "MORE INFO",true);
     SkyUI::button(tft,DetailLayout::kMapButton.x,DetailLayout::kMapButton.y,
                   DetailLayout::kMapButton.w,DetailLayout::kMapButton.h,
                   "BACK TO MAP");
