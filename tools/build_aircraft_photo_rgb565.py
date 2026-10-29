@@ -11,7 +11,7 @@ from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 import shutil
 import json
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw, ImageStat, ImageChops
 
 W, H = 304, 128
 FULL_W, FULL_H = 320, 166
@@ -31,14 +31,36 @@ def encode_rgb565(image: Image.Image) -> bytes:
     return bytes(out)
 
 
+def frame_image(image: Image.Image, size: tuple[int, int]) -> Image.Image:
+    """Preserve complete aircraft nose, tail and wings; do not crop to fill."""
+    fitted = ImageOps.contain(image, size, method=Image.Resampling.LANCZOS)
+    framed = Image.new("RGB", size, (20, 29, 39))
+    framed.paste(fitted, ((size[0]-fitted.width)//2, (size[1]-fitted.height)//2))
+    return framed
+
+
+def decode_rgb565(raw: bytes, width: int, height: int) -> Image.Image:
+    """Independent LE decoder to verify pixel ordering and RGB channels."""
+    if len(raw) != width*height*2:
+        raise ValueError("RGB565 byte count mismatch")
+    pixels = []
+    for i in range(0, len(raw), 2):
+        word = raw[i] | (raw[i+1] << 8)
+        pixels.append((((word >> 11) & 31) * 255 // 31,
+                       ((word >> 5) & 63) * 255 // 63,
+                       (word & 31) * 255 // 31))
+    result = Image.new("RGB", (width, height))
+    result.putdata(pixels)
+    return result
+
+
 def prepare(jpg:Path) -> bytes:
     with Image.open(jpg) as src:
         src.load()
         im = ImageOps.exif_transpose(src).convert("RGB")
         # Natural-colour LANCZOS resizing only. The earlier contrast boost and
         # unsharp mask amplified JPEG artefacts on the small TFT.
-        im = ImageOps.fit(im, (W,H), method=Image.Resampling.LANCZOS,
-                          centering=(0.5,0.5))
+        im = frame_image(im, (W,H))
         payload = encode_rgb565(im)
         assert len(payload) == PIXEL_BYTES
         return payload
@@ -50,9 +72,7 @@ def prepare_full(jpg: Path) -> bytes:
     with Image.open(jpg) as src:
         src.load()
         im = ImageOps.exif_transpose(src).convert("RGB")
-        im = ImageOps.fit(im, (FULL_W, FULL_H),
-                          method=Image.Resampling.LANCZOS,
-                          centering=(0.5, 0.5))
+        im = frame_image(im, (FULL_W, FULL_H))
         pixels = encode_rgb565(im)
         assert len(pixels) == FULL_W*FULL_H*2
         return pixels
@@ -68,10 +88,14 @@ def main():
     destination=args.output/"aircraft"
     destination.mkdir(parents=True,exist_ok=True)
     imported=[]
+    preview_tiles=[]
+    channel_errors={}
+    visual=args.output/"visual-review"
+    visual.mkdir(parents=True,exist_ok=True)
     for photo in sorted(source.glob("*.jpg")):
         code=photo.stem
         credit=photo.with_suffix(".txt")
-        if not (len(code)==4 and code.isalnum() and code.isupper() and credit.exists()):
+        if not (2<=len(code)<=4 and code.isalnum() and code.isupper() and credit.exists()):
             print("SKIP missing metadata / malformed type:",photo.name,flush=True)
             continue
         lines=credit.read_text(encoding="utf8").splitlines()
@@ -83,6 +107,20 @@ def main():
         full = prepare_full(photo)
         (destination/(code+".full.rgb565")).write_bytes(full)
         (destination/(code+".txt")).write_bytes(credit.read_bytes())
+        with Image.open(photo) as img:
+            expected = frame_image(ImageOps.exif_transpose(img).convert("RGB"),
+                                   (FULL_W, FULL_H))
+        decoded = decode_rgb565(full, FULL_W, FULL_H)
+        mean = max(ImageStat.Stat(ImageChops.difference(expected, decoded)).mean)
+        if mean > 5.0:
+            raise RuntimeError(f"RGB565 channels/bytes wrong for {code}: mean error {mean:.2f}")
+        channel_errors[code] = round(mean, 3)
+        tile = Image.new("RGB", (FULL_W*2, FULL_H+18), (16, 26, 37))
+        tile.paste(expected, (0, 18))
+        tile.paste(decoded, (FULL_W, 18))
+        ImageDraw.Draw(tile).text((6, 4), code+"  SOURCE FIT | DECODED SD RGB565", fill="white")
+        tile.save(visual/(code+".png"))
+        preview_tiles.append(tile)
         imported.append(code)
         print("RGB565",code,len(raw),"detail bytes /",len(full),"full-screen bytes",flush=True)
     if not imported:
@@ -91,8 +129,20 @@ def main():
         if (source/meta).is_file():
             shutil.copyfile(source/meta,destination/meta)
     (destination/"conversion-report.json").write_text(json.dumps({
-        "converted_count":len(imported), "converted_codes":sorted(imported)
+        "converted_count":len(imported), "converted_codes":sorted(imported),
+        "max_mean_channel_error":max(channel_errors.values()),
+        "mean_channel_errors":channel_errors,
+        "byte_order":"little-endian RGB565"
     },indent=2)+"\n",encoding="utf8")
+    columns = 2
+    step_h = FULL_H + 18
+    review_sheet = Image.new("RGB", (columns*FULL_W*2,
+                        ((len(preview_tiles)+columns-1)//columns)*step_h), (16,26,37))
+    for index,tile in enumerate(preview_tiles):
+        review_sheet.paste(tile,((index%columns)*FULL_W*2,(index//columns)*step_h))
+    review_sheet.save(args.output/"RGB565-original-vs-decoded-review.jpg", quality=90)
+    print("PASS: RGB565 visual roundtrip, worst mean channel error",
+          max(channel_errors.values()), flush=True)
     (destination/"README.txt").write_text(
         "CYD SkyTracker direct-render aircraft model photographs\n"
         "Each .rgb565 is exactly 304x128 pixels, little-endian RGB565.\n"
