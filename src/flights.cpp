@@ -253,7 +253,10 @@ void FlightTracker::drawMarkers(TFT_eSPI& tft,const MapView& map) {
     capturePaint(map,fresh,freshCount,segments,segmentCount);
     for(int i=0;i<segmentCount;++i) {
         const auto& a=segments[i];
-        tft.drawLine(a.x1,a.y1,a.x2,a.y2,TFT_CYAN);
+        // Most recent confirmed flight path is brightest; older legs fade.
+        const uint16_t trailColour=i>segmentCount-5?0x77FF:
+            i>segmentCount-11?0x45AC:0x2B88;
+        tft.drawLine(a.x1,a.y1,a.x2,a.y2,trailColour);
     }
     for(int i=0;i<freshCount;++i) {
         const auto& a=fresh[i];
@@ -291,7 +294,9 @@ void FlightTracker::drawChanges(TFT_eSPI& tft,MapView& map,bool sdReady) {
                std::min(int(line.x1),int(line.x2)) > right+2 ||
                std::max(int(line.y1),int(line.y2)) < y-2 ||
                std::min(int(line.y1),int(line.y2)) > bottom+2)continue;
-            tft.drawLine(line.x1,line.y1,line.x2,line.y2,TFT_CYAN);
+            const uint16_t trailColour=i>segments-5?0x77FF:
+                i>segments-11?0x45AC:0x2B88;
+            tft.drawLine(line.x1,line.y1,line.x2,line.y2,trailColour);
         }
         for(int i=0;i<count;++i) {
             const auto& a=fresh[i];
