@@ -4,6 +4,7 @@
 #include "aircraft_icon_renderer.h"
 #include "aircraft_type_photo.h"
 #include "ui_style.h"
+#include "detail_layout.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -277,73 +278,75 @@ void FlightTracker::deselect() {
 }
 
 void FlightTracker::updateDetailsTelemetry(TFT_eSPI& tft) const {
-    if(!hasSelection())return;
-    const AircraftRecord& a=records_[selected_];
+    if (!hasSelection()) return;
+    const AircraftRecord& a = records_[selected_];
 
-    // Only the four stats cards are refreshed on the ADS-B timer. This
-    // preserves the photo, navigation and aircraft identification.
-    const struct { int x,y; const char* name; String value; } values[] = {
-        {8, 117, "ALTITUDE", a.altitudeFt >= 0 ? String(a.altitudeFt)+" ft" : String("-- ft")},
-        {164,117,"GROUND SPEED",a.speedKt >= 0 ? String(a.speedKt,0)+" kt":String("-- kt")},
-        {8, 153, "DISTANCE",String(a.distanceNm,1)+" NM"},
-        {164,153,"TRACK",String(a.heading,0)+" deg"}
+    // Compact two-row dashboard. On each ADS-B poll only these four cards
+    // are repainted; the SD aircraft image and navigation stay untouched.
+    struct Reading {
+        DetailLayout::Rect box;
+        const char* label;
+        String value;
+        uint16_t colour;
+    };
+    const Reading rows[] = {
+        {DetailLayout::kAltitude, "ALT", a.altitudeFt>=0 ?
+            String(a.altitudeFt)+" FT" : String("--- FT"), SkyUI::kWhite},
+        {DetailLayout::kSpeed, "SPD", a.speedKt>=0 ?
+            String(a.speedKt,0)+" KT" : String("--- KT"), SkyUI::kAccent},
+        {DetailLayout::kDistance, "DIST",
+            String(a.distanceNm,1)+" NM", SkyUI::kWhite},
+        {DetailLayout::kTrack, "HDG", String(int(a.heading+0.5f)%360)+
+            " "+DetailLayout::compass16(a.heading), SkyUI::kGold}
     };
     tft.setTextSize(1);
-    for(const auto& field : values) {
-        tft.fillRoundRect(field.x,field.y,148,32,4,SkyUI::kPanel);
+    for (const auto& card : rows) {
+        const auto& b=card.box;
+        tft.fillRoundRect(b.x,b.y,b.w,b.h,4,SkyUI::kPanel);
+        tft.drawFastVLine(b.x+2,b.y+4,b.h-8,SkyUI::kBorder);
         tft.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
-        tft.setCursor(field.x+7,field.y+3);
-        tft.print(field.name);
-        tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
-        tft.setCursor(field.x+7,field.y+16);
-        tft.print(field.value.substring(0,21));
+        tft.setCursor(b.x+7,b.y+6);
+        tft.print(card.label);
+        const int valueX=b.x+(strcmp(card.label,"DIST")==0?43:37);
+        tft.setTextColor(card.colour,SkyUI::kPanel);
+        tft.setCursor(valueX,b.y+6);
+        tft.print(card.value.substring(0,17));
     }
 }
 void FlightTracker::drawDetails(TFT_eSPI& tft) const {
-    if(!hasSelection())return;
+    if (!hasSelection()) return;
     const AircraftRecord& a=records_[selected_];
 
     tft.fillScreen(SkyUI::kBackground);
+    // Slim branded flight strip: large, readable callsign plus the real
+    // registration. Neither text is copied onto an unrelated type image.
     tft.fillRect(0,0,tft.width(),29,SkyUI::kPanel);
-    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    tft.fillRect(0,27,tft.width(),2,SkyUI::kAccent);
     tft.setTextSize(2);
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
     tft.setCursor(8,6);
     tft.print(String(a.flight[0]?a.flight:a.hex).substring(0,12));
-    SkyUI::button(tft,tft.width()-64,3,57,23,"MAP");
-
-    // The 152x64 aircraft thumbnail is rendered separately into this card.
-    tft.drawRoundRect(8,37,156,73,5,SkyUI::kBorder);
     tft.setTextSize(1);
-    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
-    tft.setCursor(174,43);
-    tft.print("REGISTRATION");
-    tft.setTextColor(SkyUI::kWhite,SkyUI::kBackground);
-    tft.setCursor(174,57);
-    tft.print(String(a.registration[0]?a.registration:"Unknown").substring(0,20));
-    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
-    tft.setCursor(174,79);
-    tft.print("AIRCRAFT MODEL");
+    tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+    const String reg=a.registration[0]?String(a.registration):String("NO REG");
+    tft.setCursor(tft.width()-8-6*int(std::min(size_t(15),reg.length())),12);
+    tft.print(reg.substring(0,15));
+
+    const auto* model=AircraftTypePhoto::find(a.type);
+    const String modelText=model?String(model->model):
+        (a.type[0] ? String("ICAO ")+a.type : String("AIRCRAFT TYPE UNKNOWN"));
     tft.setTextColor(SkyUI::kAccent,SkyUI::kBackground);
-    const auto* identified = AircraftTypePhoto::find(a.type);
-    const String modelText = identified ? String(identified->model)
-                                        : String(a.type[0]?a.type:"Unknown");
-    // Make and model, not just a raw ICAO code. Fit the 146px right column
-    // into two small-font lines without intruding into the telemetry cards.
-    int split = modelText.length() > 23 ? modelText.lastIndexOf(' ',23) : -1;
-    if(split < 1) split = 23;
-    tft.setCursor(174,91);
-    tft.print(modelText.substring(0,split));
-    if(modelText.length() > size_t(split)) {
-        tft.setCursor(174,102);
-        tft.print(modelText.substring(split+1,split+24));
-    }
+    tft.setCursor(9,34);
+    // 50 characters at 6px wide fit the tested 320px display.
+    tft.print(modelText.substring(0,49));
 
+    // 304x110 photograph is drawn by PhotoView::drawHero, not here.
+    // Keep photo, credit, four stats and navigation in fixed disjoint areas.
     updateDetailsTelemetry(tft);
-    tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
-    tft.setTextSize(1);
-    tft.setCursor(8,189);
-    tft.print("Representative model image");
-    // Photo creator and licence appear at y=199 (drawn by PhotoView).
-    SkyUI::button(tft,8,215,146,23,"VIEW PHOTO",true);
-    SkyUI::button(tft,164,215,tft.width()-172,23,"BACK TO MAP");
+    SkyUI::button(tft,DetailLayout::kPhotoButton.x,DetailLayout::kPhotoButton.y,
+                  DetailLayout::kPhotoButton.w,DetailLayout::kPhotoButton.h,
+                  "ENLARGE PHOTO",true);
+    SkyUI::button(tft,DetailLayout::kMapButton.x,DetailLayout::kMapButton.y,
+                  DetailLayout::kMapButton.w,DetailLayout::kMapButton.h,
+                  "BACK TO MAP");
 }
