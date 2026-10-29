@@ -270,24 +270,47 @@ void FlightTracker::drawChanges(TFT_eSPI& tft,MapView& map,bool sdReady) {
     PaintedSegment freshTrail[FlightTrail::kCapacity-1];
     int count=0,segments=0;
     capturePaint(map,fresh,count,freshTrail,segments);
-    bool change=false;
+
+    // The old renderer first erased EVERY moved aircraft and only THEN drew
+    // all the aircraft, so a slow SD card produced a visible empty sky.
+    // Restore each small background patch and immediately paint any planes
+    // and trails that intersect it; never leave the entire overlay blank.
+    auto repaintPatch=[&](int x,int y,int w,int h) {
+        if(w<=0||h<=0)return;
+        map.restoreRect(tft,x,y,w,h,sdReady);
+        const int right=x+w, bottom=y+h;
+        for(int i=0;i<segments;++i) {
+            const auto& line=freshTrail[i];
+            if(std::max(int(line.x1),int(line.x2)) < x-2 ||
+               std::min(int(line.x1),int(line.x2)) > right+2 ||
+               std::max(int(line.y1),int(line.y2)) < y-2 ||
+               std::min(int(line.y1),int(line.y2)) > bottom+2)continue;
+            tft.drawLine(line.x1,line.y1,line.x2,line.y2,TFT_CYAN);
+        }
+        for(int i=0;i<count;++i) {
+            const auto& a=fresh[i];
+            if(a.x+19<x||a.x-19>right||a.y+19<y||a.y-19>bottom)continue;
+            AircraftIcon::draw(tft,a.x,a.y,float(a.heading),
+                               a.colour,a.highlighted);
+        }
+    };
+
+    bool changed=false;
     for(int i=0;i<paintedCount_;++i) {
         bool same=false;
         for(int j=0;j<count;++j) {
             if(samePaint(painted_[i],fresh[j])) {same=true;break;}
         }
         if(!same) {
-            // A small (~40x40) background repair, rather than wiping 320x240
-            // and re-streaming every tile from microSD each 30 seconds.
-            map.restoreRect(tft,painted_[i].x-20,painted_[i].y-20,
-                            40,40,sdReady);
-            change=true;
+            repaintPatch(painted_[i].x-20,painted_[i].y-20,40,40);
+            changed=true;
         }
     }
     bool trailChanged=paintedTrailCount_!=segments;
     if(!trailChanged) {
         for(int i=0;i<segments;++i) {
-            const auto& a=paintedTrail_[i];const auto& b=freshTrail[i];
+            const auto& a=paintedTrail_[i];
+            const auto& b=freshTrail[i];
             if(a.x1!=b.x1||a.y1!=b.y1||a.x2!=b.x2||a.y2!=b.y2) {
                 trailChanged=true;break;
             }
@@ -298,25 +321,26 @@ void FlightTracker::drawChanges(TFT_eSPI& tft,MapView& map,bool sdReady) {
             const auto& a=paintedTrail_[i];
             const int x=std::min(int(a.x1),int(a.x2))-2;
             const int y=std::min(int(a.y1),int(a.y2))-2;
-            const int w=abs(int(a.x2)-int(a.x1))+5;
-            const int h=abs(int(a.y2)-int(a.y1))+5;
-            map.restoreRect(tft,x,y,w,h,sdReady);
+            const int w=std::abs(int(a.x2)-int(a.x1))+5;
+            const int h=std::abs(int(a.y2)-int(a.y1))+5;
+            repaintPatch(x,y,w,h);
         }
-        change=true;
+        changed=true;
     }
-    if(!change) {
-        if(count!=paintedCount_)change=true;
+    if(!changed) {
+        if(count!=paintedCount_)changed=true;
         else for(int i=0;i<count;++i) {
             bool found=false;
             for(int j=0;j<paintedCount_;++j) {
                 if(samePaint(fresh[i],painted_[j])) {found=true;break;}
             }
-            if(!found) {change=true;break;}
+            if(!found){changed=true;break;}
         }
     }
-    if(change)drawMarkers(tft,map);
+    // Draw new positions and copy the tracked overlay state. Painting over
+    // an unchanged icon is cheap and doesn't expose blank map pixels.
+    if(changed)drawMarkers(tft,map);
 }
-
 bool FlightTracker::selectAt(int x,int y,const MapView& map) {
     int best=-1, bestDistance2=17*17;
     for (int i=0;i<count_;++i) {
