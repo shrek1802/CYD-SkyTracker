@@ -14,6 +14,7 @@
 #include "splash.h"
 #include "photo_view.h"
 #include "ui_style.h"
+#include "detail_layout.h"
 #include "colour_diagnostic.h"
 
 namespace {
@@ -74,22 +75,24 @@ void drawFlightScreen() {
     if (!tracker.hasSelection()) return;
     photoFullscreen = false;
     tracker.drawDetails(display);
-    photo.drawThumbnail(display);
-    photo.drawCreditAt(display, 199);
+    photo.drawHero(display);
+    photo.drawCreditAt(display, DetailLayout::kCreditY);
 }
 void drawPhotoScreen() {
     if (!tracker.hasSelection()) return;
     photoFullscreen = true;
     display.fillScreen(SkyUI::kBackground);
     display.fillRect(0,0,display.width(),27,SkyUI::kPanel);
+    display.fillRect(0,26,display.width(),2,SkyUI::kAccent);
     display.setTextSize(1);
     display.setTextColor(SkyUI::kGold,SkyUI::kPanel);
     display.setCursor(8,9);
-    display.print("AIRCRAFT PHOTO");
-    const AircraftRecord* a = tracker.selectedRecord();
+    display.print("PHOTO");
+    const AircraftRecord* a=tracker.selectedRecord();
     display.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
-    display.setCursor(124,9);
-    if(a)display.print(String(a->type).substring(0,9));
+    display.setCursor(51,9);
+    if(a)display.print(String(a->flight[0]?a->flight:a->type).substring(0,17));
+    SkyUI::button(display,display.width()-64,2,57,23,"MAP");
     photo.drawFullscreen(display);
     photo.drawCreditAt(display,199);
     SkyUI::button(display,8,214,146,24,"< DETAILS");
@@ -369,11 +372,9 @@ void loop() {
                     }
                 } else {
                     const bool showPhoto =
-                        (touchEndX < 167 && touchEndY >= 32 && touchEndY <= 115) ||
-                        (touchEndY >= 210 && touchEndX < 158);
+                        DetailLayout::openPhoto(touchEndX,touchEndY);
                     const bool returnToMap =
-                        (touchEndY < 31 && touchEndX >= display.width()-73) ||
-                        (touchEndY >= 210 && touchEndX >= 158);
+                        DetailLayout::goToMap(touchEndX,touchEndY);
                     if (showPhoto) {
                         drawPhotoScreen();
                     } else if (returnToMap) {
