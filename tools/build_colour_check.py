@@ -44,14 +44,14 @@ def build(out):
     original.save(preview)
     readme=out/"RGB565-TEST-INSTRUCTIONS.txt"
     readme.write_text(
-        "CYD SkyTracker RGB565 colour test.\\n"
-        "Copy diagnostics/rgb565-check.rgb565 onto microSD root.\\n"
-        "Run the existing firmware and send COLOUR_TEST over 115200 baud.\\n"
-        "Compare the native TFT swatches on top to the SD swatches underneath.\\n"
-        "If only the lower colours differ, inspect byte swap and SD read path.\\n"
-        "If both differ from the PNG, check TFT panel RGB/BGR/inversion.\\n"
-        "This test does not erase settings, flash, or format SD.\\n"
-        "File SHA-256: "+hashlib.sha256(raw).hexdigest()+"\\n",
+        "CYD SkyTracker RGB565 colour test.\n"
+        "Copy diagnostics/rgb565-check.rgb565 onto microSD root.\n"
+        "Run the existing firmware and send COLOUR_TEST over 115200 baud.\n"
+        "Compare the native TFT swatches on top to the SD swatches underneath.\n"
+        "If only the lower colours differ, inspect byte swap and SD read path.\n"
+        "If both differ from the PNG, check TFT panel RGB/BGR/inversion.\n"
+        "This test does not erase settings, flash, or format SD.\n"
+        "File SHA-256: "+hashlib.sha256(raw).hexdigest()+"\n",
         encoding="utf-8")
     archive=out/"SkyTracker-RGB565-Colour-Diagnostic-SD.zip"
     with ZipFile(archive,"w",ZIP_DEFLATED) as zipfile:

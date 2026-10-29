@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
+import shutil
+import json
 from PIL import Image, ImageOps
 
 W, H = 304, 128
@@ -85,6 +87,12 @@ def main():
         print("RGB565",code,len(raw),"detail bytes /",len(full),"full-screen bytes",flush=True)
     if not imported:
         raise RuntimeError("No credited JPEGs found: cannot build SD pack")
+    for meta in ("attribution.json","coverage.json"):
+        if (source/meta).is_file():
+            shutil.copyfile(source/meta,destination/meta)
+    (destination/"conversion-report.json").write_text(json.dumps({
+        "converted_count":len(imported), "converted_codes":sorted(imported)
+    },indent=2)+"\n",encoding="utf8")
     (destination/"README.txt").write_text(
         "CYD SkyTracker direct-render aircraft model photographs\n"
         "Each .rgb565 is exactly 304x128 pixels, little-endian RGB565.\n"

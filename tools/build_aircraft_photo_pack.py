@@ -19,21 +19,64 @@ from html.parser import HTMLParser
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
 
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageDraw, ImageStat
 
 USER_AGENT = "CYD-SkyTracker/0.4 (https://github.com/shrek1802/CYD-SkyTracker)"
 COMMONS = "https://commons.wikimedia.org/w/api.php"
 MODELS = {
+    "A318": ("Airbus A318", "Airbus A318"),
     "A319": ("Airbus A319", "Airbus A319"),
     "A320": ("Airbus A320", "Airbus A320"),
     "A20N": ("Airbus A320neo", "Airbus A320neo"),
     "A321": ("Airbus A321", "Airbus A321"),
     "A21N": ("Airbus A321neo", "Airbus A321neo"),
+    "BCS1": ("Airbus A220-100", "Airbus A220-100"),
+    "BCS3": ("Airbus A220-300", "Airbus A220-300"),
+    "A332": ("Airbus A330-200", "Airbus A330-200"),
+    "A333": ("Airbus A330-300", "Airbus A330-300"),
+    "A339": ("Airbus A330-900neo", "Airbus A330-900neo"),
+    "A359": ("Airbus A350-900", "Airbus A350-900"),
+    "A35K": ("Airbus A350-1000", "Airbus A350-1000"),
+    "A388": ("Airbus A380-800", "Airbus A380-800"),
+    "B737": ("Boeing 737-700", "Boeing 737-700"),
     "B738": ("Boeing 737-800", "Boeing 737-800"),
+    "B739": ("Boeing 737-900", "Boeing 737-900"),
     "B38M": ("Boeing 737 MAX 8", "Boeing 737 MAX 8"),
+    "B39M": ("Boeing 737 MAX 9", "Boeing 737 MAX 9"),
+    "B744": ("Boeing 747-400", "Boeing 747-400"),
+    "B748": ("Boeing 747-8", "Boeing 747-8"),
+    "B752": ("Boeing 757-200", "Boeing 757-200"),
+    "B753": ("Boeing 757-300", "Boeing 757-300"),
+    "B763": ("Boeing 767-300", "Boeing 767-300"),
+    "B764": ("Boeing 767-400", "Boeing 767-400"),
+    "B772": ("Boeing 777-200", "Boeing 777-200"),
+    "B77W": ("Boeing 777-300ER", "Boeing 777-300ER"),
+    "B788": ("Boeing 787-8", "Boeing 787-8"),
     "B789": ("Boeing 787-9", "Boeing 787-9"),
+    "B78X": ("Boeing 787-10", "Boeing 787-10"),
+    "E170": ("Embraer 170", "Embraer 170"),
+    "E175": ("Embraer 175", "Embraer 175"),
     "E190": ("Embraer 190", "Embraer 190"),
+    "E195": ("Embraer 195", "Embraer 195"),
+    "E290": ("Embraer E190-E2", "Embraer E190-E2"),
+    "E295": ("Embraer E195-E2", "Embraer E195-E2"),
+    "AT72": ("ATR 72", "ATR 72"),
     "AT76": ("ATR 72-600", "ATR 72-600"),
+    "DH8D": ("De Havilland Canada Dash 8-400", "De Havilland Canada Dash 8-400"),
+    "CRJ2": ("Bombardier CRJ200", "Bombardier CRJ200"),
+    "CRJ7": ("Bombardier CRJ700", "Bombardier CRJ700"),
+    "CRJ9": ("Bombardier CRJ900", "Bombardier CRJ900"),
+    "C172": ("Cessna 172", "Cessna 172"),
+    "C182": ("Cessna 182", "Cessna 182"),
+    "C208": ("Cessna 208 Caravan", "Cessna 208 Caravan"),
+    "PA28": ("Piper PA-28", "Piper PA-28"),
+    "PC12": ("Pilatus PC-12", "Pilatus PC-12"),
+    "C25A": ("Cessna Citation CJ2", "Cessna Citation CJ2"),
+    "C56X": ("Cessna Citation Excel", "Cessna Citation Excel"),
+    "GLF5": ("Gulfstream V", "Gulfstream V"),
+    "GLF6": ("Gulfstream G650", "Gulfstream G650"),
+    "CL60": ("Bombardier Challenger 600", "Bombardier Challenger 600"),
+    "LJ45": ("Learjet 45", "Learjet 45"),
 }
 # Hand-picked EXTERIOR airframe images, verified as examples of each model.
 # Commons licensing and author metadata are fetched afresh and validated.
@@ -80,7 +123,7 @@ def api(params):
     p = {
         "action": "query", "prop": "imageinfo",
         "iiprop": "url|extmetadata|mime",
-        "iiextmetadatafilter": "Artist|LicenseShortName",
+        "iiextmetadatafilter": "Artist|LicenseShortName|LicenseUrl",
         "iiurlwidth": "700", "format": "json", "formatversion": "2",
     }
     p.update(params)
@@ -138,14 +181,18 @@ def select(pages, model, pinned=False):
                 "Artist", {}).get("value", "")
             cleaner = Plain()
             cleaner.feed(artist_html)
-            artist = cleaner.get() or "Wikimedia contributor"
+            artist = cleaner.get()
+            if not artist or artist.lower() in ("unknown", "anonymous"):
+                continue
             source = image.get("descriptionurl", "")
             if not source.startswith("https://commons.wikimedia.org/"):
                 print("  rejected source",repr(source[:120]),flush=True)
                 continue
             return {
                 "title": page.get("title", ""), "url": u, "licence": lic,
-                "artist": artist[:95], "source": source}
+                "artist": artist[:95], "source": source,
+                "licence_url": image.get("extmetadata", {}).get(
+                    "LicenseUrl", {}).get("value", "")}
     return None
 
 
@@ -173,12 +220,16 @@ def make_photo(entry, dst):
     body = request(entry["url"])
     with Image.open(io.BytesIO(body)) as source:
         original = ImageOps.exif_transpose(source).convert("RGB")
-        original.thumbnail((700, 500), Image.Resampling.LANCZOS)
+        if min(original.size)<250:
+            raise ValueError("Image too small for 320px display")
+        original.thumbnail((1000,700),Image.Resampling.LANCZOS)
+        if ImageStat.Stat(original.convert("L")).stddev[0] < 12:
+            raise ValueError("Low-detail image; manual review required")
         output = io.BytesIO()
-        original.save(output, format="JPEG", quality=77, optimize=True,
+        original.save(output, format="JPEG", quality=87, optimize=True,
                       progressive=False, subsampling="4:2:0")
         jpeg = output.getvalue()
-    if not (jpeg.startswith(b"\xff\xd8") and 0 < len(jpeg) < 90_000):
+    if not (jpeg.startswith(b"\xff\xd8") and 0 < len(jpeg) < 350_000):
         raise ValueError("JPEG exceeds device memory limit")
     dst.write_bytes(jpeg)
     return len(jpeg)
@@ -191,27 +242,47 @@ def main():
     photos = args.output / "aircraft"
     photos.mkdir(parents=True, exist_ok=True)
     manifest = {}
+    unavailable = {}
     for code, (model, category) in MODELS.items():
         try:
             print(f"Looking up {code}: {model} ...", flush=True)
             entry = lookup(model, category, PINNED.get(code))
             if not entry:
                 print("  no clearly licensed JPEG, skipped", flush=True)
+                unavailable[code] = "No suitable licensed exterior photograph"
                 continue
             size = make_photo(entry, photos / f"{code}.jpg")
             for key in ("artist", "licence", "source"):
                 entry[key] = " ".join(entry[key].replace("\n", " ").split())
             (photos / f"{code}.txt").write_text(
                 entry["artist"] + "\n" + entry["licence"] + "\n" +
-                entry["source"] + "\n", encoding="utf8")
+                entry["source"] + "\n" +
+                (entry.get("licence_url") or "") + "\n", encoding="utf8")
             manifest[code] = {"model": model, "bytes": size, **entry}
             print(f"  wrote {size} byte photo, licence {entry['licence']}", flush=True)
         except Exception as exc:
             (photos / f"{code}.jpg").unlink(missing_ok=True)
             (photos / f"{code}.txt").unlink(missing_ok=True)
+            unavailable[code] = str(exc)[:180]
             print(f"  unavailable: {exc}", flush=True)
     if len(manifest) < 4:
         raise SystemExit(f"Insufficient licensed photos ({len(manifest)})")
+    (photos/"coverage.json").write_text(json.dumps({
+        "requested":len(MODELS), "downloaded":len(manifest),
+        "available_codes":sorted(manifest), "missing":unavailable
+    },indent=2,ensure_ascii=False)+"\n",encoding="utf8")
+    if manifest:
+        codes=sorted(manifest)
+        cols,tw,th=4,240,130
+        contact=Image.new("RGB",(cols*tw,th*((len(codes)+cols-1)//cols)),"#0c1726")
+        draw=ImageDraw.Draw(contact)
+        for i,code in enumerate(codes):
+            with Image.open(photos/f"{code}.jpg") as im:
+                thumb=ImageOps.fit(im.convert("RGB"),(232,102),method=Image.Resampling.LANCZOS)
+            x,y=(i%cols)*tw+4,(i//cols)*th+4
+            contact.paste(thumb,(x,y))
+            draw.text((x+3,y+106),code+"  "+MODELS[code][0][:26],fill="#ffffff")
+        contact.save(args.output/"aircraft-photo-contact-sheet.jpg",quality=88)
     (photos / "README.txt").write_text(
         "Representative model photos from Wikimedia Commons.\n"
         "NOT photographs of the particular aircraft being tracked.\n"
@@ -225,7 +296,7 @@ def main():
         for f in photos.rglob("*"):
             if f.is_file():
                 z.write(f, f.relative_to(args.output))
-    print("PACK CREATED:", archive, "photos:", len(manifest), flush=True)
+    print("PACK CREATED:", archive, "photos:", len(manifest), "missing:", len(unavailable),flush=True)
 
 
 if __name__ == "__main__":

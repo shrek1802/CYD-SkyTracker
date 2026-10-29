@@ -13,7 +13,7 @@ permissions:
 jobs:
   create_sd_pack:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -74,7 +74,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: SkyTracker-Aircraft-Direct-RGB565-SD-Pack
-          path: /tmp/SkyTracker-RGB565-SD/SkyTracker-Direct-RGB565-Aircraft-Photos.zip
+          path: |
+            /tmp/SkyTracker-RGB565-SD/SkyTracker-Direct-RGB565-Aircraft-Photos.zip
+            /tmp/SkyTracker-Photo-SD/aircraft-photo-contact-sheet.jpg
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
