@@ -3,6 +3,7 @@
 #include "aircraft_type_photo.h"
 #include "ui_style.h"
 #include "rgb565_display.h"
+#include "aircraft_icon.h"
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
@@ -404,6 +405,21 @@ void PhotoView::drawCredit(TFT_eSPI& tft) const {
 }
 
 namespace {
+// For ICAO types without a licensed SD photograph, draw an original
+// top-down silhouette; never mislabel another model as the selected airframe.
+// Reuse the exact same 20-point aircraft outline as the radar markers.
+void drawTypeSilhouette(TFT_eSPI& tft,int x,int y,int w,int h) {
+    AircraftIcon::Point outline[AircraftIcon::kOutlineSize];
+    const int cx=x+w/2, cy=y+h/2;
+    const float scale=std::min(float(w)/34.0f,float(h)/36.0f);
+    AircraftIcon::polygon(cx,cy,0.0f,outline,scale);
+    for(int i=0;i<AircraftIcon::kOutlineSize;++i) {
+        const auto& a=outline[i];
+        const auto& b=outline[(i+1)%AircraftIcon::kOutlineSize];
+        tft.drawLine(a.x,a.y,b.x,b.y,SkyUI::kAccent);
+    }
+    tft.fillCircle(cx,cy,2,SkyUI::kGold);
+}
 // Row-stream an SD RGB565 image at its native size with a hard byte-count
 // and bounded 640-byte RAM row. No full-screen allocation or JPEG decoder.
 bool renderNative(TFT_eSPI& tft,const String& path,int x,int y,int w,int h) {
@@ -433,8 +449,7 @@ void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
     constexpr int x=10, y=39, w=152, h=64;
     tft.fillRoundRect(x-2,y-2,w+4,h+4,5,SkyUI::kPanelAlt);
     if(!rgbReady_) {
-        tft.setTextColor(SkyUI::kWhite,SkyUI::kPanelAlt);
-        tft.drawCentreString(status_.substring(0,23),x+w/2,y+24,1);
+        drawTypeSilhouette(tft,x,y,w,h-14);
     } else {
         File raw=SD.open(rgbPath_,FILE_READ);
         if(!raw||raw.size()!=kRawBytes) {
@@ -462,7 +477,7 @@ void PhotoView::drawThumbnail(TFT_eSPI& tft) const {
     tft.fillRect(x,y+h-15,w,15,SkyUI::kPanel);
     tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
     tft.setCursor(x+10,y+h-12);
-    tft.print("TAP TO ENLARGE");
+    tft.print(rgbReady_?"TAP TO ENLARGE":"TYPE SILHOUETTE");
 }
 
 void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
@@ -471,8 +486,9 @@ void PhotoView::drawFullscreen(TFT_eSPI& tft) const {
     const int wide=320, tall=166, x=(tft.width()-wide)/2, y=28;
     tft.fillRect(0,y,tft.width(),tall,SkyUI::kBackground);
     if(!rgbReady_) {
+        drawTypeSilhouette(tft,0,y,tft.width(),tall-30);
         tft.setTextColor(SkyUI::kGold,SkyUI::kBackground);
-        tft.drawCentreString(status_.substring(0,42),tft.width()/2,105,2);
+        tft.drawCentreString("NO LICENSED MODEL PHOTO ON SD",tft.width()/2,y+tall-24,1);
         return;
     }
     String full=rgbPath_;
