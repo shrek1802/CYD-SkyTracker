@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include "flight_trail.h"
+#include "flight_motion.h"
 class MapView;
 
 struct AircraftRecord {
@@ -15,6 +16,8 @@ struct AircraftRecord {
     int altitudeFt = -1;
     float distanceNm = 0;
     int bearing = 0;
+    uint32_t fixMs = 0;          // time of the measured position
+    uint32_t lastConfirmedMs = 0; // last successful sighting in the API
 };
 
 class FlightTracker {
@@ -22,6 +25,7 @@ public:
     static constexpr int MAX_AIRCRAFT = 60;
     void begin(double homeLat, double homeLon, int radiusNm = 60);
     bool poll();
+    uint32_t pollIntervalMs() const { return pollIntervalMs_; }
     void drawMarkers(TFT_eSPI& tft, const MapView& map);
     // On aircraft polls restore only changed icon/trail footprints.
     void drawChanges(TFT_eSPI& tft, MapView& map, bool sdReady);
@@ -38,6 +42,7 @@ public:
     uint32_t lastPollMs() const { return lastPollMs_; }
 private:
     AircraftRecord records_[MAX_AIRCRAFT] = {};
+    AircraftRecord incoming_[MAX_AIRCRAFT] = {}; // stage data without blanking old planes
     int count_ = 0, selected_ = -1;
     char selectedHex_[9] = {};
     FlightTrail trail_;
@@ -61,4 +66,5 @@ private:
     bool hasData_ = false;
     String status_ = "Waiting for ADS-B";
     uint32_t lastPollMs_ = 0;
+    uint32_t pollIntervalMs_ = 10000; // 10-sec API polls, back off on failures
 };
