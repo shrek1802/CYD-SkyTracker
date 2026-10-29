@@ -28,6 +28,7 @@ void MapView::begin(double homeLat, double homeLon, uint8_t zoom) {
     centerLat_ = homeLat_;
     centerLon_ = homeLon_;
     zoom_ = (zoom < 3 || zoom > kMaxZoom) ? 10 : zoom;
+    nightMode_ = nightAvailable_ = themeInitialised_ = false;
     ready_ = true;
 }
 void MapView::setZoom(uint8_t value) {
@@ -44,9 +45,12 @@ void MapView::tap(int x, int y, int w, int h) {
     if (!SkyUI::mapControlHit(x,y,w))return;
     if (y < 69) setZoom(zoom_ + 1);
     else if (y < 104) setZoom(zoom_ - 1);
-    else if (y <= 144) {
+    else if (y < SkyUI::kThemeY) {
         centerLat_ = homeLat_;
         centerLon_ = homeLon_;
+    } else if (y <= SkyUI::kThemeY + SkyUI::kControlH && nightAvailable_) {
+        nightMode_ = !nightMode_;
+        Serial.printf("[MAP] Map style: %s\\n", nightMode_ ? "NIGHT" : "DAY");
     }
 }
 bool MapView::project(double lat, double lon, int& x, int& y) const {
@@ -88,7 +92,7 @@ void MapView::drawTiles(TFT_eSPI& tft) {
                 continue;
             }
             const int wrappedX = (tx % tiles + tiles) % tiles;
-            std::snprintf(path, sizeof(path), "/maps/%d/%d/%d.rgb565",
+            std::snprintf(path, sizeof(path), nightMode_ ? "/maps/night/%d/%d/%d.rgb565" : "/maps/%d/%d/%d.rgb565",
                           int(zoom_), wrappedX, ty);
             File f = SD.open(path, FILE_READ);
             if (!f || f.size() != size_t(kSide * kSide * 2)) {
@@ -153,7 +157,7 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
                     continue;
                 }
                 const int wrap=(tx%n+n)%n;
-                std::snprintf(path,sizeof(path),"/maps/%d/%d/%d.rgb565",
+                std::snprintf(path,sizeof(path),nightMode_ ? "/maps/night/%d/%d/%d.rgb565" : "/maps/%d/%d/%d.rgb565",
                               int(zoom_),wrap,ty);
                 File tile=SD.open(path,FILE_READ);
                 if(!tile||tile.size()!=size_t(kSide*kSide*2)) {
@@ -204,12 +208,13 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
     }
 
     // Redraw only controls intersecting the repaired map patch.
-    for(int i=0;i<3;++i) {
-        const int yy=SkyUI::kControlY[i];
+    for(int i=0;i<4;++i) {
+        if(i==3 && !nightAvailable_)continue;
+        const int yy=i==3?SkyUI::kThemeY:SkyUI::kControlY[i];
         if(r>=width_-SkyUI::kControlW-5 && b>=yy && t<=yy+SkyUI::kControlH) {
             SkyUI::button(tft,width_-SkyUI::kControlW-5,yy,
                           SkyUI::kControlW,SkyUI::kControlH,
-                          i==0?"+":(i==1?"-":"H"));
+                          i==0?"+":(i==1?"-":i==2?"H":nightMode_?"D":"N"));
         }
     }
 }
@@ -245,11 +250,16 @@ void MapView::drawUi(TFT_eSPI& tft,bool wifiConnected,bool sdReady,int missingCo
                       SkyUI::kControlW,SkyUI::kControlH,
                       i==0?"+":(i==1?"-":"H"));
     }
+    if(nightAvailable_) {
+        SkyUI::button(tft,width_-SkyUI::kControlW-5,SkyUI::kThemeY,
+                      SkyUI::kControlW,SkyUI::kControlH,
+                      nightMode_?"D":"N");
+    }
 
     tft.fillRect(0,bottom_,width_,tft.height()-bottom_,SkyUI::kPanel);
     tft.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
     tft.setCursor(width_-70,bottom_+3);
-    tft.print(sdReady?(missingCount?"MAP GAPS":"SD MAP"):"NO SD");
+    tft.print(sdReady?(missingCount?"MAP GAPS":nightMode_?"NIGHT MAP":"DAY MAP"):"NO SD");
     // Display mandatory attribution on every offline-map view.
     tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
     tft.setCursor(6,bottom_+14);
@@ -261,6 +271,14 @@ void MapView::draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected) {
     top_ = SkyUI::kTop;
     bottom_ = tft.height() - SkyUI::kBottom;
     missing_ = 0;
+    nightAvailable_ = sdReady && SD.exists("/maps/night");
+    if(!themeInitialised_) {
+        // Newly installed dual-theme packs start on the darker aviation map.
+        // Legacy SD cards remain on their original day tiles unchanged.
+        nightMode_ = nightAvailable_;
+        themeInitialised_ = true;
+    }
+    if(!nightAvailable_) nightMode_ = false;
     tft.fillScreen(kBg);
     if (sdReady) drawTiles(tft);
     else missingTile(tft, 0, top_, width_, bottom_ - top_, 0, 0);
