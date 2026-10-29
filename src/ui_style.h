@@ -1,5 +1,6 @@
 #pragma once
 #include <TFT_eSPI.h>
+#include <cstring>
 
 // Layout is designed around the user's physically tested 320x240
 // ILI9341 in landscape, but uses the current TFT width where practical.
