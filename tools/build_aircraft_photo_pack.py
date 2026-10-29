@@ -169,6 +169,11 @@ MODELS = {
 # Do not replace these with arbitrary first-search hits.
 PINNED = {
     # Additional exterior alternatives, sourced from Commons aircraft photos.
+    # Previously missing type photographs: still require Commons licence checks.
+    "A338": "File:Uganda Airlines, 5X-NIL, Airbus A330-841 (52016338470).jpg",
+    "C550": "File:Cessna Citation II (7007131512).jpg",
+    "DH8C": "File:C-GTAG landing in Vancouver.jpg",
+    "C172": "File:Cessna 172 Skyhawk.jpg",
     "A20N": "File:Citilink Airbus A320neo PK-GTC Dili 2018 (03).jpg",
     "A346": "File:Lufthansa A346 D-AIHT.jpg",
     "B736": "File:Boeing 737-600.jpg",
