@@ -194,7 +194,7 @@ PINNED = {
     "DHC6": "File:Air Adelphi Twin Otter landing.jpg",
     "F100": "File:Alliance Airlines Fokker 100 VH-FKF Perth 2024 (01).jpg",
     "SR20": "File:CirrusSR20Landing.jpg",
-    "F406": "File:Reims-Cessna F406 Le Bourget 029.jpg",
+    "F406": "File:D-IFFF (31697022334).jpg",
     "B763": "File:Patriots Boeing 767-300 N225NE BWI MD1.jpg",
     "A319": "File:Airbus A319 easyJet.JPG",
     "A320": "File:EasyJet Airbus A320-200 G-EZRT.jpg",
