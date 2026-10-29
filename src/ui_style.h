@@ -20,9 +20,10 @@ constexpr int kControlW = 31;
 constexpr int kControlH = 29;
 constexpr int kControlXMargin = 5;
 constexpr int kControlY[3] = {36, 72, 108};
+constexpr int kThemeY = 144;
 inline bool mapControlHit(int x, int y, int w) {
     return x >= w - kControlW - kControlXMargin - 3 &&
-           y >= kControlY[0] - 3 && y <= kControlY[2] + kControlH + 3;
+           y >= kControlY[0] - 3 && y <= kThemeY + kControlH + 3;
 }
 inline void button(TFT_eSPI& tft,int x,int y,int w,int h,
                    const char* label,bool primary=false) {
