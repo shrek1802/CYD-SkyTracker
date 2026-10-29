@@ -18,10 +18,10 @@ PLACE = {'city':0,'town':1,'village':2,'suburb':3,'hamlet':4,'neighbourhood':4}
 # Use real OSM vector geometries, independently rasterized offline — never scrape
 # a commercial or OpenStreetMap public tile server.
 LAND_COLOURS = {
-    'park':'#cde7c0', 'forest':'#c4ddb7', 'grass':'#dbecc8',
-    'farmland':'#f3edda', 'residential':'#eef0ec',
-    'industrial':'#e5e5e8', 'commercial':'#e8e6e1',
-    'water':'#add5e9', 'building':'#dddcd6'
+    'park':'#dce8d8', 'forest':'#cbdac6', 'grass':'#e0ecdd',
+    'farmland':'#efece1', 'residential':'#edeff0',
+    'industrial':'#e2e6e9', 'commercial':'#ece9e4',
+    'water':'#b6d3df', 'building':'#d3d8dc'
 }
 LOW_ZOOM_RADIUS = {9:110,10:85,11:65,12:45}
 
@@ -100,7 +100,7 @@ def level(source,lat,lon,radius,z,output):
     count=(x1-x0+1)*(y1-y0+1)
     if count>1600:raise RuntimeError('Too many tiles; reduce radius or maxzoom')
     print(f'Zoom {z}: {count} tiles within {radius}km',flush=True)
-    images={(x,y):Image.new('RGB',(256,256),'#f4f5ef') for x in range(x0,x1+1) for y in range(y0,y1+1)}
+    images={(x,y):Image.new('RGB',(256,256),'#f0f2ed') for x in range(x0,x1+1) for y in range(y0,y1+1)}
     draws={key:ImageDraw.Draw(img) for key,img in images.items()}
 
     def apply_to_tiles(pts,call):
@@ -125,25 +125,25 @@ def level(source,lat,lon,radius,z,output):
         apply_to_tiles(pts,lambda dr,line: dr.polygon(line,fill=fill))
 
     # Water/rail/roads overlay their landuse base with clear hierarchy.
-    paints=['#f0a05c','#f3b67a','#f6cb9b','#fae0aa','#fff2d0','#fffdf7','#dfe4de','#d4d9d1']
+    paints=['#e9bd91','#eecaa6','#ecd8ba','#eee2cf','#f5eee0','#f8f7f4','#e3e7e5','#dae0dd']
     def line_width(rank):
         return max(1,(6-rank)+(z-12))
     for layer,rank,way in sorted(source.lines,key=lambda e: (0 if e[0]=='water' else 1 if e[0]=='rail' else 2, -e[1])):
-        if layer=='road' and ((z<=9 and rank>2) or (z==10 and rank>4) or (z==11 and rank>5) or (z==12 and rank>6)):
+        if layer=='road' and ((z<=9 and rank>2) or (z==10 and rank>4) or (z==11 and rank>5) or (z==12 and rank>6) or (z>=13 and rank>6)):
             continue
         if layer=='water':
             # Tiny streams and drains at zoom 9 create blue spaghetti.
             # Preserve navigable rivers/canals at broad zoom; add detail later.
             if (z<=10 and rank>1) or (z==11 and rank>2) or (z==12 and rank>2):
                 continue
-            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#83b8d6',
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#91b8cd',
                                     width=(4 if rank==0 else 2) if z>=12 else 2,joint='curve'))
         elif layer=='rail' and z>=11:
             apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#a8adb3',width=2 if z>=13 else 1,joint='curve'))
         elif layer=='road':
             w=line_width(rank)
             def draw_road(dr,line):
-                dr.line(line,fill='#c4c6c1',width=w+2,joint='curve')
+                dr.line(line,fill='#bdc5c7',width=w+2,joint='curve')
                 dr.line(line,fill=paints[rank],width=w,joint='curve')
             apply_to_tiles(way,draw_road)
 
@@ -203,7 +203,7 @@ def main():
     (maps/'attribution.txt').write_text('(c) OpenStreetMap contributors | ODbL 1.0\n')
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
         'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
-        'zoom_tile_counts':counts,'data_source':BASE_URL,'source_counties':counties,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
+        'zoom_tile_counts':counts,'cartography':'muted-aviation-v2','data_source':BASE_URL,'source_counties':counties,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
     out=args.output/'SkyTracker-Nottinghamshire-Offline-Maps.zip'
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as zf:
         for p in maps.rglob('*'):
