@@ -21,6 +21,7 @@ BASE = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/ge
 SOURCE_FILES = {
     "land": "ne_50m_land.geojson",
     "cities": "ne_50m_populated_places.geojson",
+    "cities_detail": "ne_10m_populated_places.geojson",
 }
 # Broad world view at z5, most of Britain / neighbouring regions at z6-7,
 # and a generous UK regional view at z8. Each radius also leaves room to pan.
@@ -46,8 +47,8 @@ def read_source(kind, cache: Path):
             "User-Agent": "CYD-SkyTracker/1.0 offline small-scale Natural Earth maps"
         })
         with urllib.request.urlopen(req, timeout=90) as response:
-            raw = response.read(20_000_001)
-        if len(raw) > 20_000_000:
+            raw = response.read(35_000_001)
+        if len(raw) > 35_000_000:
             raise RuntimeError("Natural Earth source exceeds safety limit")
         path.write_bytes(raw)
     doc = json.loads(path.read_text(encoding="utf8"))
@@ -211,9 +212,13 @@ def main():
         parser.error("This pack targets the United Kingdom and neighbouring areas")
     land=read_source("land",args.cache)
     cities=read_source("cities",args.cache)
+    # The 1:10m places layer adds Nottingham, Derby, Sheffield, Leicester,
+    # and other regional settlements missing from the 1:50m world overview.
+    cities_detail=read_source("cities_detail",args.cache)
     output=args.output
     output.mkdir(parents=True,exist_ok=True)
-    counts={z:generate_level(land,cities,args.lat,args.lon,z,output) for z in RADIUS}
+    counts={z:generate_level(land,cities if z<=6 else cities_detail,
+                             args.lat,args.lon,z,output) for z in RADIUS}
     maps=output/"maps"
     (maps/"wide-map-pack.json").write_text(json.dumps({
         "format":"CYD-SkyTracker-rgb565-le-v1",
