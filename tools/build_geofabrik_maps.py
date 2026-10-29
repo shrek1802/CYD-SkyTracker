@@ -5,7 +5,11 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 import osmium
 
-URL = 'https://download.geofabrik.de/europe/united-kingdom/england/nottinghamshire-latest.osm.pbf'
+BASE_URL = 'https://download.geofabrik.de/europe/united-kingdom/england/'
+# Neighbouring county extracts prevent blank rectangles beyond Nottinghamshire
+# at low zoom, without needing an England-wide 1.6GB source.
+COUNTIES = ('nottinghamshire','derbyshire','leicestershire',
+            'lincolnshire','south-yorkshire','rutland')
 RANK = {'motorway':0,'motorway_link':0,'trunk':1,'trunk_link':1,'primary':2,
         'primary_link':2,'secondary':3,'secondary_link':3,'tertiary':4,
         'tertiary_link':4,'residential':5,'unclassified':5,'living_street':5,
@@ -69,7 +73,7 @@ class Extract(osmium.SimpleHandler):
         if road in RANK:
             self.lines.append(('road',RANK[road],pts))
         elif water in ('river','stream','canal','drain'):
-            self.lines.append(('water',0,pts))
+            self.lines.append(('water',{'river':0,'canal':1,'stream':2,'drain':3}[water],pts))
         elif railway in ('rail','light_rail','tram'):
             self.lines.append(('rail',0,pts))
 
@@ -128,7 +132,12 @@ def level(source,lat,lon,radius,z,output):
         if layer=='road' and ((z<=9 and rank>2) or (z==10 and rank>4) or (z==11 and rank>5) or (z==12 and rank>6)):
             continue
         if layer=='water':
-            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#73b5d8',width=4 if z>=12 else 2,joint='curve'))
+            # Tiny streams and drains at zoom 9 create blue spaghetti.
+            # Preserve navigable rivers/canals at broad zoom; add detail later.
+            if (z<=10 and rank>1) or (z==11 and rank>2) or (z==12 and rank>2):
+                continue
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#83b8d6',
+                                    width=(4 if rank==0 else 2) if z>=12 else 2,joint='curve'))
         elif layer=='rail' and z>=11:
             apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#a8adb3',width=2 if z>=13 else 1,joint='curve'))
         elif layer=='road':
@@ -169,16 +178,22 @@ def main():
     args=ap.parse_args()
     if not(-85<args.lat<85 and -180<args.lon<180 and 1<=args.radius_km<=80 and 3<=args.minzoom<=args.maxzoom<=15):ap.error('Invalid map bounds or zoom')
     args.output.mkdir(parents=True,exist_ok=True)
-    source=args.source or args.output/'nottinghamshire-latest.osm.pbf'
-    if not source.is_file():
-        print('Downloading Nottinghamshire OSM extract from Geofabrik...',flush=True)
-        req=urllib.request.Request(URL,headers={'User-Agent':'CYD-SkyTracker offline map builder (https://github.com/shrek1802/CYD-SkyTracker)'})
-        with urllib.request.urlopen(req,timeout=90) as response,source.open('wb') as f:
-            import shutil;shutil.copyfileobj(response,f)
-    dlat=(max(args.radius_km,110)+15)/111.2;dlon=dlat/math.cos(math.radians(args.lat))
+    dlat=(max(args.radius_km,110)+15)/111.2
+    dlon=dlat/math.cos(math.radians(args.lat))
     handler=Extract((args.lat-dlat,args.lon-dlon,args.lat+dlat,args.lon+dlon))
-    print('Reading real road and place data...',flush=True)
-    handler.apply_file(str(source),locations=True)
+    counties=('nottinghamshire',) if args.source is not None else COUNTIES
+    for county in counties:
+        source=args.source or args.output/(county+'-latest.osm.pbf')
+        if not source.is_file():
+            url=BASE_URL+county+'-latest.osm.pbf'
+            print('Downloading permitted OSM vector extract:',county,flush=True)
+            req=urllib.request.Request(url,headers={
+                'User-Agent':'CYD-SkyTracker offline OSM tile builder (github.com/shrek1802/CYD-SkyTracker)'})
+            with urllib.request.urlopen(req,timeout=120) as response,source.open('wb') as dest:
+                import shutil
+                shutil.copyfileobj(response,dest)
+        print('Parsing '+county+' OSM roads/areas...',flush=True)
+        handler.apply_file(str(source),locations=True)
     print(len(handler.lines),'roads/rivers/rails;',len(handler.areas),'land/water areas;',
           len(handler.places),'named places',flush=True)
     if not handler.lines:raise RuntimeError('No road data found in requested area')
@@ -188,7 +203,7 @@ def main():
     (maps/'attribution.txt').write_text('(c) OpenStreetMap contributors | ODbL 1.0\n')
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
         'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
-        'zoom_tile_counts':counts,'data_source':URL,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
+        'zoom_tile_counts':counts,'data_source':BASE_URL,'source_counties':counties,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
     out=args.output/'SkyTracker-Nottinghamshire-Offline-Maps.zip'
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as zf:
         for p in maps.rglob('*'):
