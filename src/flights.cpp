@@ -216,15 +216,22 @@ void FlightTracker::capturePaint(const MapView& map, PaintedMarker* icons,
             }
         }
     }
+    const uint32_t now=millis();
     for(int i=0;i<count_;++i) {
         int x=0,y=0;
         const AircraftRecord& a=records_[i];
-        if(!map.project(a.lat,a.lon,x,y))continue;
+        if(!FlightMotion::stillVisible(now,a.lastConfirmedMs))continue;
+        // Predicted movement is bounded to 12 seconds, and is not presented
+        // as an additional confirmed ADS-B position.
+        const auto position=FlightMotion::predict(
+            a.lat,a.lon,a.speedKt,a.heading,uint32_t(now-a.fixMs));
+        if(!map.project(position.lat,position.lon,x,y))continue;
         PaintedMarker& p=icons[iconCount++];
         memcpy(p.hex,a.hex,sizeof(p.hex));
         p.x=int16_t(x);p.y=int16_t(y);
         p.heading=int16_t(std::lround(a.heading));
-        p.colour=a.altitudeFt<0?TFT_CYAN:
+        p.colour=uint32_t(now-a.lastConfirmedMs)>23000?SkyUI::kMuted:
+                 a.altitudeFt<0?TFT_CYAN:
                  a.altitudeFt<10000?TFT_YELLOW:TFT_WHITE;
         p.highlighted=(i==selected_);
     }
@@ -314,7 +321,11 @@ bool FlightTracker::selectAt(int x,int y,const MapView& map) {
     int best=-1, bestDistance2=17*17;
     for (int i=0;i<count_;++i) {
         int px=0,py=0;
-        if (!map.project(records_[i].lat,records_[i].lon,px,py)) continue;
+        const auto& rec=records_[i];
+        if(!FlightMotion::stillVisible(millis(),rec.lastConfirmedMs))continue;
+        const auto predicted=FlightMotion::predict(rec.lat,rec.lon,
+                rec.speedKt,rec.heading,uint32_t(millis()-rec.fixMs));
+        if (!map.project(predicted.lat,predicted.lon,px,py)) continue;
         int d=(px-x)*(px-x)+(py-y)*(py-y);
         if (d < bestDistance2) {best=i;bestDistance2=d;}
     }
