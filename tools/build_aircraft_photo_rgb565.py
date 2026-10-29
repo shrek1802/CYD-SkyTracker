@@ -78,6 +78,9 @@ def frame_image(image: Image.Image, size: tuple[int, int],
     The same focus is applied to detail and fullscreen images.
     """
     source = image.convert("RGB")
+    if code=="F406":
+        from isolated_f406 import isolate
+        return isolate(source,size)
     if code in FOCUS:
         zoom, fx, fy = FOCUS[code]
         crop_w = max(1, round(source.width / zoom))
