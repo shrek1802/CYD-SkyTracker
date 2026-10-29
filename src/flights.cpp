@@ -2,6 +2,7 @@
 #include "map_view.h"
 #include "geo.h"
 #include "aircraft_icon_renderer.h"
+#include "aircraft_type_photo.h"
 #include "ui_style.h"
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -321,10 +322,21 @@ void FlightTracker::drawDetails(TFT_eSPI& tft) const {
     tft.print(String(a.registration[0]?a.registration:"Unknown").substring(0,20));
     tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
     tft.setCursor(174,79);
-    tft.print("AIRCRAFT TYPE");
+    tft.print("AIRCRAFT MODEL");
     tft.setTextColor(SkyUI::kAccent,SkyUI::kBackground);
-    tft.setCursor(174,94);
-    tft.print(String(a.type[0]?a.type:"Unknown").substring(0,16));
+    const auto* identified = AircraftTypePhoto::find(a.type);
+    const String modelText = identified ? String(identified->model)
+                                        : String(a.type[0]?a.type:"Unknown");
+    // Make and model, not just a raw ICAO code. Fit the 146px right column
+    // into two small-font lines without intruding into the telemetry cards.
+    int split = modelText.length() > 23 ? modelText.lastIndexOf(' ',23) : -1;
+    if(split < 1) split = 23;
+    tft.setCursor(174,91);
+    tft.print(modelText.substring(0,split));
+    if(modelText.length() > size_t(split)) {
+        tft.setCursor(174,102);
+        tft.print(modelText.substring(split+1,split+24));
+    }
 
     updateDetailsTelemetry(tft);
     tft.setTextColor(SkyUI::kMuted,SkyUI::kBackground);
