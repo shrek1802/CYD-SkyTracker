@@ -142,25 +142,41 @@ def level(source,lat,lon,radius,z,output):
             apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#a8adb3',width=2 if z>=13 else 1,joint='curve'))
         elif layer=='road':
             w=line_width(rank)
+            # At z13 one-pixel residential roads retain local streets but
+            # stop their outlines covering most of a 320x188 viewport.
+            if z>=13 and rank>=5: w=1
+            casing=1 if rank>=4 else 2
             def draw_road(dr,line):
-                dr.line(line,fill='#bdc5c7',width=w+2,joint='curve')
+                dr.line(line,fill='#bdc5c7',width=w+casing,joint='curve')
                 dr.line(line,fill=paints[rank],width=w,joint='curve')
             apply_to_tiles(way,draw_road)
 
-    # Dark legible town names with a light text halo.
+    # Place labels must be drawn on ALL intersecting tiles. Earlier builds
+    # drew text only on the centre tile, cutting town names at 256px seams.
+    # Store collision boxes in world pixels so a seam cannot duplicate a name.
     used={key:[] for key in images}
     for rank,name,plat,plon in sorted(source.places):
         if rank>max(1,z-9):continue
-        u,v=project(plat,plon,z);x=int(u//256);y=int(v//256)
-        if (x,y) not in draws:continue
-        dr=draws[(x,y)];f=font(14 if rank<2 else 11,rank<2)
-        bb=dr.textbbox((0,0),name,font=f);w=bb[2]-bb[0];h=bb[3]-bb[1]
-        tx=round(u-x*256-w/2);ty=round(v-y*256-h/2)
+        u,v=project(plat,plon,z)
+        tile=(int(u//256),int(v//256))
+        if tile not in draws:continue
+        f=font(14 if rank<2 else 11,rank<2)
+        bb=draws[tile].textbbox((0,0),name,font=f)
+        w=bb[2]-bb[0];h=bb[3]-bb[1]
+        tx=round(u-w/2);ty=round(v-h/2)
         box=(tx-3,ty-3,tx+w+3,ty+h+3)
-        if any(not(box[2]<other[0] or box[0]>other[2] or box[3]<other[1] or box[1]>other[3])
-               for other in used[(x,y)]):continue
-        dr.text((tx,ty),name,font=f,fill='#213c48',stroke_width=2,stroke_fill='#f5f7f2')
-        used[(x,y)].append(box)
+        affected=[(ix,iy)
+                  for ix in range(max(x0,int(box[0]//256)),min(x1,int(box[2]//256))+1)
+                  for iy in range(max(y0,int(box[1]//256)),min(y1,int(box[3]//256))+1)
+                  if (ix,iy) in draws]
+        if any(not(box[2]<other[0] or box[0]>other[2] or
+                   box[3]<other[1] or box[1]>other[3])
+               for key in affected for other in used[key]):continue
+        for ix,iy in affected:
+            draws[(ix,iy)].text((tx-ix*256,ty-iy*256),name,font=f,
+                                fill='#213c48',stroke_width=2,
+                                stroke_fill='#f5f7f2')
+            used[(ix,iy)].append(box)
     for (x,y),img in images.items():
         dest=output/str(z)/str(x%(1<<z));dest.mkdir(parents=True,exist_ok=True)
         (dest/f'{y}.rgb565').write_bytes(as565(img))
