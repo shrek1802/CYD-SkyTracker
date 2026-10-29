@@ -70,7 +70,9 @@ void drawRadar() {
     tracker.invalidatePaint();
     mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
     tracker.drawMarkers(display, mapView);
-    mapView.drawFlightStatus(display, tracker.count(), tracker.status());
+    mapView.drawFlightStatus(display, tracker.count(), tracker.status(),
+                             tracker.lastGoodPollMs() ?
+                             int((millis()-tracker.lastGoodPollMs())/1000) : -1);
 }
 
 void drawFlightScreen() {
@@ -429,7 +431,9 @@ void loop() {
         } else {
             // Aircraft move; the static map background stays on the screen.
             tracker.drawChanges(display, mapView, sdReady);
-            mapView.drawFlightStatus(display, tracker.count(), tracker.status());
+            mapView.drawFlightStatus(display, tracker.count(), tracker.status(),
+                             tracker.lastGoodPollMs() ?
+                             int((millis()-tracker.lastGoodPollMs())/1000) : -1);
         }
     }
     // Keep radar symbols moving between network snapshots. This does not
@@ -438,6 +442,9 @@ void loop() {
         millis() - lastMotionFrame >= kMotionFrameMs) {
         lastMotionFrame = millis();
         tracker.drawChanges(display,mapView,sdReady);
+        mapView.drawFlightStatus(display,tracker.count(),tracker.status(),
+                    tracker.lastGoodPollMs() ?
+                    int((millis()-tracker.lastGoodPollMs())/1000) : -1);
     }
     if (mapShowing && WiFi.status() != WL_CONNECTED &&
         millis() - lastWiFiRetry > 30000UL) {
