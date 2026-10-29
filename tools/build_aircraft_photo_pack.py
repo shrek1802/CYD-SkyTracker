@@ -89,11 +89,19 @@ PINNED = {
     "B38M": "File:N8801Q - Boeing 737 MAX-8 - Southwest Airlines.jpg",
     "AT76": "File:ATR 72-600 in flight.jpg",
     "A21N": "File:Airbus A321neo EI-LRE MD1.jpg",
+    # Visually reviewed alternatives to sky-only / cabin / engine images.
+    "A35K": "File:Cathay A35K.jpg",
+    "B739": "File:Boeing 737-900 (26889681761).jpg",
+    "B753": "File:Boeing 757 300 plane aircraft.jpg",
+    "CRJ9": "File:Bombardier CRJ900.JPG",
+    "GLF6": "File:Gulfstream G650.JPG",
 }
 
 BAD = ("cockpit", "interior", "cabin", "safety card", "seat map", "logo",
        "diagram", "simulation", "illustration", "engine detail", "scale model",
-       "wing view", "seat", "floorplan")
+       "wing view", "seat", "floorplan", "emergency oxygen",
+       "oxygen mask", "engine", "turbine", "winglet", "close-up",
+       "landing gear", "undercarriage")
 
 
 class Plain(HTMLParser):
@@ -132,8 +140,10 @@ def api(params):
 
 def acceptable(lic):
     upper = lic.strip().upper()
-    return upper in ("CC0", "PUBLIC DOMAIN") or upper.startswith(
-        ("CC0 ", "PUBLIC DOMAIN ", "CC BY ", "CC BY-SA ", "CC-BY-", "CC-BY-SA-"))
+    if upper in ("CC0", "PUBLIC DOMAIN") or upper.startswith(("CC0 ", "PUBLIC DOMAIN ")):
+        return True
+    # Full match is essential: CC-BY-NC and CC-BY-ND are not permitted.
+    return re.fullmatch(r"CC[ -]BY(?:[ -]SA)?[ -](?:1\.0|2\.0|2\.5|3\.0|4\.0)", upper) is not None
 
 
 def good_filename(name, model):
@@ -258,7 +268,9 @@ def main():
                 entry["artist"] + "\n" + entry["licence"] + "\n" +
                 entry["source"] + "\n" +
                 (entry.get("licence_url") or "") + "\n", encoding="utf8")
-            manifest[code] = {"model": model, "bytes": size, **entry}
+            manifest[code] = {"model": model, "bytes": size,
+                              "review_status": "curated" if code in PINNED else "automated_unreviewed",
+                              **entry}
             print(f"  wrote {size} byte photo, licence {entry['licence']}", flush=True)
         except Exception as exc:
             (photos / f"{code}.jpg").unlink(missing_ok=True)
@@ -269,7 +281,9 @@ def main():
         raise SystemExit(f"Insufficient licensed photos ({len(manifest)})")
     (photos/"coverage.json").write_text(json.dumps({
         "requested":len(MODELS), "downloaded":len(manifest),
-        "available_codes":sorted(manifest), "missing":unavailable
+        "available_codes":sorted(manifest), "missing":unavailable,
+        "curated_codes":sorted(code for code in manifest if code in PINNED),
+        "automated_unreviewed_codes":sorted(code for code in manifest if code not in PINNED)
     },indent=2,ensure_ascii=False)+"\n",encoding="utf8")
     if manifest:
         codes=sorted(manifest)
