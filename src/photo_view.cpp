@@ -15,9 +15,9 @@
 namespace {
 constexpr size_t kMaxJpegBytes = 90000;
 // A 144x96 little-endian RGB565 model image is a fixed 27,648-byte stream.
-constexpr int kRawW = 144, kRawH = 96;
+constexpr int kRawW = 304, kRawH = 128;
 constexpr size_t kRawBytes = size_t(kRawW) * size_t(kRawH) * 2;
-constexpr int kX=7, kY=39, kW=150, kH=99;
+constexpr int kX=8, kY=32, kW=304, kH=128;
 TFT_eSPI* currentDisplay = nullptr;
 
 bool drawJpegBlock(int16_t x,int16_t y,uint16_t w,uint16_t h,uint16_t* bitmap) {
@@ -330,7 +330,7 @@ void PhotoView::draw(TFT_eSPI& tft) const {
         for(int row=0;row<kRawH;++row) {
             const size_t bytes=raw.read(reinterpret_cast<uint8_t*>(pixels),kRawW*2);
             if(bytes!=size_t(kRawW*2)) {ok=false;break;}
-            tft.pushImage(kX+3,kY+1+row,kRawW,1,pixels);
+            tft.pushImage(kX,kY+row,kRawW,1,pixels);
         }
         raw.close();
         Serial.printf("[PHOTO] RGB565 drawing: %s, %d rows\n",
@@ -385,19 +385,18 @@ void PhotoView::draw(TFT_eSPI& tft) const {
     }
 }
 void PhotoView::drawCredit(TFT_eSPI& tft) const {
-    tft.setTextSize(1);tft.setTextColor(TFT_CYAN,TFT_BLACK);
-    tft.setCursor(7,184);
-    if(!jpeg_&&!rgbReady_) {
-        tft.print("Photo: "+status_);
+    // Credit stays visible beneath the full-width photo and live telemetry.
+    // Full Commons file URL remains available through [PHOTO] USB diagnostics.
+    tft.fillRect(8,216,tft.width()-16,13,TFT_BLACK);
+    tft.setTextSize(1);
+    tft.setTextColor(TFT_CYAN,TFT_BLACK);
+    tft.setCursor(8,218);
+    if(!rgbReady_ && !jpeg_) {
+        tft.print(status_.substring(0,49));
         return;
     }
-    tft.print(representative_?"Example: ":"Aircraft: ");
+    tft.print("Photo: ");
     tft.setTextColor(TFT_WHITE,TFT_BLACK);
-    tft.print(model_.substring(0,34));
-    tft.setCursor(7,198);
-    tft.setTextColor(TFT_CYAN,TFT_BLACK);tft.print("Photo: ");
-    tft.setTextColor(TFT_WHITE,TFT_BLACK);tft.print(artist_.substring(0,38));
-    tft.setCursor(7,211);
-    tft.setTextColor(TFT_CYAN,TFT_BLACK);
-    tft.print(licence_.substring(0,17)+"  Wikimedia Commons");
+    String credit = artist_ + "  |  " + licence_;
+    tft.print(credit.substring(0,43));
 }
