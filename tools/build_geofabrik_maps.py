@@ -11,6 +11,15 @@ RANK = {'motorway':0,'motorway_link':0,'trunk':1,'trunk_link':1,'primary':2,
         'tertiary_link':4,'residential':5,'unclassified':5,'living_street':5,
         'service':6,'pedestrian':6,'footway':7,'cycleway':7,'path':7,'track':7}
 PLACE = {'city':0,'town':1,'village':2,'suburb':3,'hamlet':4,'neighbourhood':4}
+# Use real OSM vector geometries, independently rasterized offline — never scrape
+# a commercial or OpenStreetMap public tile server.
+LAND_COLOURS = {
+    'park':'#cde7c0', 'forest':'#c4ddb7', 'grass':'#dbecc8',
+    'farmland':'#f3edda', 'residential':'#eef0ec',
+    'industrial':'#e5e5e8', 'commercial':'#e8e6e1',
+    'water':'#add5e9', 'building':'#dddcd6'
+}
+LOW_ZOOM_RADIUS = {9:110,10:85,11:65,12:45}
 
 def project(lat,lon,z):
     lat=max(-85.05112878,min(85.05112878,lat))
@@ -19,7 +28,8 @@ def project(lat,lon,z):
 
 class Extract(osmium.SimpleHandler):
     def __init__(self,bounds):
-        super().__init__();self.lines=[];self.places=[];self.bounds=bounds
+        super().__init__()
+        self.lines=[]; self.places=[]; self.areas=[]; self.bounds=bounds
     def node(self,n):
         p=n.tags.get('place'); name=n.tags.get('name')
         if p in PLACE and name and n.location.valid():
@@ -27,14 +37,41 @@ class Extract(osmium.SimpleHandler):
             if self.bounds[0]<=a<=self.bounds[2] and self.bounds[1]<=b<=self.bounds[3]:
                 self.places.append((PLACE[p],str(name),a,b))
     def way(self,w):
-        road=w.tags.get('highway'); water=w.tags.get('waterway')
-        if road not in RANK and water not in ('river','stream','canal','drain'):return
-        try: pts=[(n.location.lat,n.location.lon) for n in w.nodes if n.location.valid()]
-        except Exception:return
+        road=w.tags.get('highway')
+        water=w.tags.get('waterway')
+        railway=w.tags.get('railway')
+        land=w.tags.get('landuse')
+        natural=w.tags.get('natural')
+        leisure=w.tags.get('leisure')
+        building=w.tags.get('building')
+        try:
+            pts=[(n.location.lat,n.location.lon) for n in w.nodes if n.location.valid()]
+        except Exception:
+            return
         if len(pts)<2:return
         a,b,c,d=self.bounds
         if max(x for x,_ in pts)<a or min(x for x,_ in pts)>c or max(x for _,x in pts)<b or min(x for _,x in pts)>d:return
-        self.lines.append((0 if road is None else 1,RANK.get(road,0),pts))
+
+        # Land-use/water polygons establish a proper cartographic base layer.
+        # Draw broad areas first, buildings last at detailed zoom only.
+        if len(pts)>=4 and pts[0]==pts[-1]:
+            kind=None
+            if natural=='water' or land in ('reservoir','basin'):kind='water'
+            elif leisure in ('park','garden','nature_reserve','golf_course'):kind='park'
+            elif natural in ('wood','scrub','heath'):kind='forest'
+            elif natural in ('grassland','meadow') or land in ('grass','meadow','recreation_ground'):kind='grass'
+            elif land in ('forest','wood'):kind='forest'
+            elif land in ('farmland','farmyard','orchard'):kind='farmland'
+            elif land in ('residential','industrial','commercial','retail'):kind='commercial' if land=='retail' else land
+            elif building:kind='building'
+            if kind:
+                self.areas.append((kind,pts))
+        if road in RANK:
+            self.lines.append(('road',RANK[road],pts))
+        elif water in ('river','stream','canal','drain'):
+            self.lines.append(('water',0,pts))
+        elif railway in ('rail','light_rail','tram'):
+            self.lines.append(('rail',0,pts))
 
 def font(sz,bold=False):
     p='/usr/share/fonts/truetype/dejavu/DejaVuSans'+('-Bold' if bold else '')+'.ttf'
@@ -49,40 +86,71 @@ def as565(im):
     return out
 
 def level(source,lat,lon,radius,z,output):
+    # Low zoom needs broader area coverage than the high-zoom 30 km radius;
+    # this fixes missing z9/x255/y166 and /167 tile errors on the actual CYD.
+    radius=max(radius,LOW_ZOOM_RADIUS.get(z,0))
     cx,cy=project(lat,lon,z)
     px=radius*(256*(1<<z))/(40075.016686*math.cos(math.radians(lat)))
     x0,x1=math.floor((cx-px)/256),math.floor((cx+px)/256)
     y0,y1=math.floor((cy-px)/256),math.floor((cy+px)/256)
     count=(x1-x0+1)*(y1-y0+1)
     if count>1600:raise RuntimeError('Too many tiles; reduce radius or maxzoom')
-    print(f'Zoom {z}: {count} geographic tiles',flush=True)
-    images={(x,y):Image.new('RGB',(256,256),'#e9eee8') for x in range(x0,x1+1) for y in range(y0,y1+1)}
+    print(f'Zoom {z}: {count} tiles within {radius}km',flush=True)
+    images={(x,y):Image.new('RGB',(256,256),'#f4f5ef') for x in range(x0,x1+1) for y in range(y0,y1+1)}
     draws={key:ImageDraw.Draw(img) for key,img in images.items()}
-    paints=['#f0a15b','#f7bd75','#f8cf8c','#f8e8ae','#fff4d3','#fffdf8','#e1e4df','#b7bab4']
-    for layer,rank,way in sorted(source.lines,key=lambda e:(e[0],-e[1])):
-        if layer==1 and (z<=9 and rank>2 or z==10 and rank>4 or z==11 and rank>5 or z==12 and rank>6):continue
-        width=(3 if rank==0 else 2) if layer==0 else max(1,6-rank+(z-12))
-        pts=[project(a,b,z) for a,b in way]
-        a=max(x0,math.floor((min(p[0] for p in pts)-5)/256));b=min(x1,math.floor((max(p[0] for p in pts)+5)/256))
-        c=max(y0,math.floor((min(p[1] for p in pts)-5)/256));d=min(y1,math.floor((max(p[1] for p in pts)+5)/256))
+
+    def apply_to_tiles(pts,call):
+        screen=[project(a,b,z) for a,b in pts]
+        a=max(x0,math.floor((min(p[0] for p in screen)-7)/256))
+        b=min(x1,math.floor((max(p[0] for p in screen)+7)/256))
+        c=max(y0,math.floor((min(p[1] for p in screen)-7)/256))
+        d=min(y1,math.floor((max(p[1] for p in screen)+7)/256))
         for x in range(a,b+1):
             for y in range(c,d+1):
-                dr=draws[(x,y)];line=[(round(u-256*x),round(v-256*y)) for u,v in pts]
-                if layer==0:dr.line(line,fill='#81bfe0',width=width+2,joint='curve')
-                else:
-                    dr.line(line,fill='#b6bfba',width=width+2,joint='curve')
-                    dr.line(line,fill=paints[rank],width=width,joint='curve')
+                local=[(round(u-256*x),round(v-256*y)) for u,v in screen]
+                call(draws[(x,y)],local)
+
+    # Soft green parks/forests, blue waterways and distinct landuse/buildings.
+    priority={'residential':0,'commercial':1,'industrial':2,'farmland':3,
+              'forest':4,'grass':5,'park':6,'water':7,'building':8}
+    for kind,pts in sorted(source.areas,key=lambda p:priority[p[0]]):
+        if kind=='building' and z<13:continue
+        if kind in ('commercial','industrial','residential') and z<11:continue
+        if kind in ('grass','farmland') and z<10:continue
+        fill=LAND_COLOURS[kind]
+        apply_to_tiles(pts,lambda dr,line: dr.polygon(line,fill=fill))
+
+    # Water/rail/roads overlay their landuse base with clear hierarchy.
+    paints=['#f0a05c','#f3b67a','#f6cb9b','#fae0aa','#fff2d0','#fffdf7','#dfe4de','#d4d9d1']
+    def line_width(rank):
+        return max(1,(6-rank)+(z-12))
+    for layer,rank,way in sorted(source.lines,key=lambda e: (0 if e[0]=='water' else 1 if e[0]=='rail' else 2, -e[1])):
+        if layer=='road' and ((z<=9 and rank>2) or (z==10 and rank>4) or (z==11 and rank>5) or (z==12 and rank>6)):
+            continue
+        if layer=='water':
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#73b5d8',width=4 if z>=12 else 2,joint='curve'))
+        elif layer=='rail' and z>=11:
+            apply_to_tiles(way,lambda dr,line:dr.line(line,fill='#a8adb3',width=2 if z>=13 else 1,joint='curve'))
+        elif layer=='road':
+            w=line_width(rank)
+            def draw_road(dr,line):
+                dr.line(line,fill='#c4c6c1',width=w+2,joint='curve')
+                dr.line(line,fill=paints[rank],width=w,joint='curve')
+            apply_to_tiles(way,draw_road)
+
+    # Dark legible town names with a light text halo.
     used={key:[] for key in images}
     for rank,name,plat,plon in sorted(source.places):
         if rank>max(1,z-9):continue
         u,v=project(plat,plon,z);x=int(u//256);y=int(v//256)
         if (x,y) not in draws:continue
-        dr=draws[(x,y)];f=font(13 if rank<2 else 11,rank<2)
+        dr=draws[(x,y)];f=font(14 if rank<2 else 11,rank<2)
         bb=dr.textbbox((0,0),name,font=f);w=bb[2]-bb[0];h=bb[3]-bb[1]
         tx=round(u-x*256-w/2);ty=round(v-y*256-h/2)
         box=(tx-3,ty-3,tx+w+3,ty+h+3)
-        if any(not(box[2]<b[0] or box[0]>b[2] or box[3]<b[1] or box[1]>b[3]) for b in used[(x,y)]):continue
-        dr.text((tx,ty),name,font=f,fill='#17374a',stroke_width=2,stroke_fill='#f8fcf6')
+        if any(not(box[2]<other[0] or box[0]>other[2] or box[3]<other[1] or box[1]>other[3])
+               for other in used[(x,y)]):continue
+        dr.text((tx,ty),name,font=f,fill='#213c48',stroke_width=2,stroke_fill='#f5f7f2')
         used[(x,y)].append(box)
     for (x,y),img in images.items():
         dest=output/str(z)/str(x%(1<<z));dest.mkdir(parents=True,exist_ok=True)
@@ -107,18 +175,20 @@ def main():
         req=urllib.request.Request(URL,headers={'User-Agent':'CYD-SkyTracker offline map builder (https://github.com/shrek1802/CYD-SkyTracker)'})
         with urllib.request.urlopen(req,timeout=90) as response,source.open('wb') as f:
             import shutil;shutil.copyfileobj(response,f)
-    dlat=(args.radius_km+15)/111.2;dlon=dlat/math.cos(math.radians(args.lat))
+    dlat=(max(args.radius_km,110)+15)/111.2;dlon=dlat/math.cos(math.radians(args.lat))
     handler=Extract((args.lat-dlat,args.lon-dlon,args.lat+dlat,args.lon+dlon))
     print('Reading real road and place data...',flush=True)
     handler.apply_file(str(source),locations=True)
-    print(len(handler.lines),'features;',len(handler.places),'named places',flush=True)
+    print(len(handler.lines),'roads/rivers/rails;',len(handler.areas),'land/water areas;',
+          len(handler.places),'named places',flush=True)
     if not handler.lines:raise RuntimeError('No road data found in requested area')
     maps=args.output/'maps';maps.mkdir(parents=True,exist_ok=True)
     counts={}
     for z in range(args.minzoom,args.maxzoom+1):counts[z]=level(handler,args.lat,args.lon,args.radius_km,z,maps)
     (maps/'attribution.txt').write_text('(c) OpenStreetMap contributors | ODbL 1.0\n')
     (maps/'map-pack.json').write_text(json.dumps({'format':'CYD-SkyTracker-rgb565-le-v1','map_centre':[args.lat,args.lon],
-        'radius_km':args.radius_km,'zoom_tile_counts':counts,'data_source':URL,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
+        'radius_km':args.radius_km,'low_zoom_radius_km':LOW_ZOOM_RADIUS,
+        'zoom_tile_counts':counts,'data_source':URL,'licence':'OpenStreetMap ODbL 1.0'},indent=2))
     out=args.output/'SkyTracker-Nottinghamshire-Offline-Maps.zip'
     with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as zf:
         for p in maps.rglob('*'):
