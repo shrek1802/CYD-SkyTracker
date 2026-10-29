@@ -12,6 +12,10 @@ int main() {
     assert(std::strcmp(find("A388")->model,"Airbus A380-800")==0);
     assert(std::strcmp(find("C172")->model,"Cessna 172")==0);
     assert(std::strcmp(find("B78X")->model,"Boeing 787-10")==0);
+    assert(std::strcmp(find("R44")->model,"Robinson R44")==0);
+    assert(std::strcmp(find("s76")->model,"Sikorsky S-76")==0);
+    assert(std::strcmp(find("B77F")->model,"Boeing 777F")==0);
+    assert(find("C1")==nullptr);
     assert(find("XXXX")==nullptr);
     assert(find("B738XX")==nullptr);
     assert(find("")==nullptr);
