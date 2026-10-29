@@ -32,7 +32,29 @@ void MapView::begin(double homeLat, double homeLon, uint8_t zoom) {
     ready_ = true;
 }
 void MapView::setZoom(uint8_t value) {
-    if (value >= 3 && value <= kMaxZoom) zoom_ = value;
+    if (value < 5 || value > 13 || value == zoom_) return;
+    // Never let the +/- controls enter a zoom level without an installed tile
+    // at the current map centre. Legacy z9-z13 SD cards remain safe, while
+    // the optional wide-area z5-z8 pack unlocks further zoom-out levels.
+    const double worldX = Geo::longitudeToX(centerLon_, value);
+    const double worldY = Geo::latitudeToY(centerLat_, value);
+    const int n = 1 << value;
+    const int tileX = (int(std::floor(worldX / 256.0)) % n + n) % n;
+    const int tileY = int(std::floor(worldY / 256.0));
+    char path[92];
+    std::snprintf(path, sizeof(path),
+                  nightMode_ ? "/maps/night/%d/%d/%d.rgb565" :
+                               "/maps/%d/%d/%d.rgb565",
+                  int(value), tileX, tileY);
+    File tile = SD.open(path, FILE_READ);
+    const bool available = tile && tile.size() == size_t(256*256*2);
+    if (tile) tile.close();
+    if (!available) {
+        Serial.printf("[MAP] Zoom %d unavailable: missing %s\\n", int(value), path);
+        return;
+    }
+    zoom_ = value;
+    Serial.printf("[MAP] Zoom changed to %d\\n", int(zoom_));
 }
 void MapView::panPixels(int dx, int dy) {
     // Finger dragging a map to the right shifts the geographic centre left.
