@@ -146,6 +146,9 @@ void PhotoView::load(const char* registration,const char* type,
         representative_=true;
         Serial.printf("[PHOTO] Type %s -> %s; registration %s\n",
             model->code,model->model,haveReg?reg.c_str():"unknown");
+    } else {
+        Serial.printf("[PHOTO] ICAO type '%s' is not in the SD type library; registration %s\\n",
+                      type?type:"",haveReg?reg.c_str():"unknown");
     }
 
     // Direct RGB565: pre-rendered on a computer, identical display format
@@ -303,6 +306,13 @@ void PhotoView::load(const char* registration,const char* type,
                 encode(String("Category:")+model->commonsCategory)+
                 "&gcmnamespace=6&gcmlimit=20";
             result=lookup(catQuery,false,true);
+        }
+        if(thumbnailUrl.isEmpty() && haveReg) {
+            // The exact registered aircraft may have a Commons image even if
+            // model/category search did not find a licence-cleared exterior.
+            const String regQuery="&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch="+
+                encode(String("\"")+reg+"\"");
+            result=lookup(regQuery,true,false);
         }
     } else if(haveReg) {
         const String catQuery="&generator=categorymembers&gcmtitle="+
