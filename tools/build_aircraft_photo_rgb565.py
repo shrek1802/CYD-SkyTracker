@@ -2,16 +2,16 @@
 """Convert licensed, credited aircraft JPEGs into pre-rendered RGB565 tiles.
 
 No web requests, no ESP32 decoder, no opaque source code dependencies.
-Files are 144x96 pixels, 16-bit *little-endian* RGB565. The renderer can
+Files are 304x128 pixels, 16-bit *little-endian* RGB565. The renderer can
 send these rows directly to TFT_eSPI, as SkyTracker already does for maps.
 """
 from __future__ import annotations
 import argparse
 from pathlib import Path
 from zipfile import ZipFile, ZIP_DEFLATED
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 
-W, H = 144, 96
+W, H = 304, 128
 PIXEL_BYTES = W * H * 2
 
 
@@ -32,8 +32,13 @@ def prepare(jpg:Path) -> bytes:
     with Image.open(jpg) as src:
         src.load()
         im = ImageOps.exif_transpose(src).convert("RGB")
-        im = ImageOps.pad(im, (W,H), method=Image.Resampling.LANCZOS,
-                          color=(10,22,35), centering=(0.5,0.5))
+        # Use a full-width landscape crop rather than letterboxing a tiny
+        # image and wasting pixels on empty dark borders. LANCZOS resampling,
+        # mild contrast and unsharp masking preserve aircraft details at 304px.
+        im = ImageOps.fit(im, (W,H), method=Image.Resampling.LANCZOS,
+                          centering=(0.5,0.5))
+        im = ImageEnhance.Contrast(im).enhance(1.08)
+        im = im.filter(ImageFilter.UnsharpMask(radius=1.0,percent=115,threshold=2))
         payload = encode_rgb565(im)
         assert len(payload) == PIXEL_BYTES
         return payload
@@ -68,7 +73,7 @@ def main():
         raise RuntimeError("No credited JPEGs found: cannot build SD pack")
     (destination/"README.txt").write_text(
         "CYD SkyTracker direct-render aircraft model photographs\n"
-        "Each .rgb565 is exactly 144x96 pixels, little-endian RGB565.\n"
+        "Each .rgb565 is exactly 304x128 pixels, little-endian RGB565.\n"
         "Copy aircraft/ to the root of FAT32 microSD, beside maps/.\n"
         "Photographs are REPRESENTATIVE aircraft TYPE images, not the\n"
         "specific live registration. Source and licence in every .txt.\n"
