@@ -45,7 +45,6 @@ PINNED = {
     "B738": "File:Ryanair UK Boeing 737-800.jpg",
     "AT76": "File:ATR 72-600 in flight.jpg",
     "A21N": "File:Airbus A321neo EI-LRE MD1.jpg",
-    "B38M": "File:Aeromexico Boeing 737 MAX 8.jpg",
 }
 
 BAD = ("cockpit", "interior", "cabin", "safety card", "seat map", "logo",
