@@ -45,6 +45,13 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_icon.cpp -o /tmp/skytracker-aircraft-test
           /tmp/skytracker-aircraft-test
+      - name: Test type-aware icons and true nautical-mile range scale
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_aircraft_symbol.cpp -o /tmp/skytracker-symbols
+          /tmp/skytracker-symbols
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_radar_scale.cpp -o /tmp/skytracker-radar-scale
+          /tmp/skytracker-radar-scale
       - name: Test bounded selected-aircraft trail
         if: matrix.target == 'cyd_2432s028r'
         run: |
