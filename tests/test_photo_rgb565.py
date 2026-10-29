@@ -26,6 +26,26 @@ class PhotoRgb565Tests(unittest.TestCase):
         self.assertEqual(list(decode_rgb565(encode_rgb565(im),3,1).getdata()),
                          [(255,0,0), (0,255,0), (0,0,255)])
 
+    def test_rgb565_floor_quantisation_can_have_mean_error_above_five(self):
+        # A correctly encoded colour can lose up to 7 points in red/blue;
+        # the old 5.0 mean cut-off rejected some valid aircraft photos.
+        from PIL import ImageChops
+        src=Image.new("RGB",(128,128),(7,3,7))
+        got=decode_rgb565(encode_rgb565(src),128,128)
+        delta=ImageChops.difference(src,got)
+        self.assertEqual(max(high for low,high in delta.getextrema()),7)
+        self.assertGreater(max(__import__("PIL").ImageStat.Stat(delta).mean),5)
+
+    def test_rgb565_colour_and_byte_swaps_exceed_per_pixel_tolerance(self):
+        from PIL import ImageChops
+        src=Image.new("RGB",(2,1))
+        src.putdata([(255,0,0),(0,0,255)])
+        le=encode_rgb565(src)
+        wrong=bytes(y for i in range(0,len(le),2) for y in (le[i+1],le[i]))
+        decoded=decode_rgb565(wrong,2,1)
+        delta=ImageChops.difference(src,decoded)
+        self.assertGreater(max(high for low,high in delta.getextrema()),7)
+
     def test_letterbox_keeps_whole_aircraft(self):
         im = Image.new("RGB",(400,100),(255,0,0))
         result = frame_image(im,(320,166))
