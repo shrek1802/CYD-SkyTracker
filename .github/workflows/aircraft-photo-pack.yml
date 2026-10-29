@@ -40,8 +40,8 @@ jobs:
               data=z.read(name)
               with Image.open(BytesIO(data)) as img:
                 assert img.format=='JPEG'
-                assert img.width<=280 and img.height<=188
-              assert len(data)<90000
+                assert img.width<=700 and img.height<=500
+              assert len(data)<160000
               credit=name[:-4]+'.txt'
               lines=z.read(credit).decode().splitlines()
               assert len(lines)>=3 and lines[1] and lines[2].startswith('https://commons.wikimedia.org/')
@@ -63,7 +63,7 @@ jobs:
               photos=[n for n in z.namelist() if n.endswith('.rgb565')]
               assert len(photos)>=4, photos
               for photo in photos:
-                  assert len(z.read(photo))==144*96*2
+                  assert len(z.read(photo))==304*128*2
                   credit=z.read(photo[:-7]+'.txt').decode('utf-8').splitlines()
                   assert len(credit)>=3 and credit[0] and credit[1]
                   assert credit[2].startswith('https://commons.wikimedia.org/')
