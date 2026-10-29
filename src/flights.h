@@ -11,10 +11,17 @@ struct AircraftRecord {
     char flight[12] = {};
     char registration[16] = {};
     char type[12] = {};
+    char squawk[5] = {};
+    char emergency[17] = {};
+    char category[4] = {};
     double lat = 0, lon = 0;
     float heading = 0;
     float speedKt = -1;
     int altitudeFt = -1;
+    int geometricAltitudeFt = -99999;
+    int verticalRateFpm = -99999;
+    int selectedAltitudeFt = -99999;
+    float navHeading = -1;
     float distanceNm = 0;
     int bearing = 0;
     uint32_t fixMs = 0;          // time of the measured position
@@ -35,6 +42,7 @@ public:
     bool hasSelection() const { return selected_ >= 0 && selected_ < count_; }
     void deselect();
     void drawDetails(TFT_eSPI& tft) const;
+    void drawExtraDetails(TFT_eSPI& tft) const;
     void updateDetailsTelemetry(TFT_eSPI& tft) const;
     const AircraftRecord* selectedRecord() const { return hasSelection() ? &records_[selected_] : nullptr; }
     int count() const { return count_; }
