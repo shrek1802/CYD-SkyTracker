@@ -1,83 +1,64 @@
-# SkyTracker aircraft photographs — larger, curated, SD-first
+# SkyTracker aviation UI (experimental)
 
-## What changed (29 October 2026)
+## New touchscreen navigation
 
-The original photo card wasted screen space: images were displayed in a
-150×99 region, with 144×96 pixels of actual aircraft photography. Some
-first-search Wikimedia results showed an engine, gear, the sun, or only
-part of an aircraft.
+**Map -> Aircraft details -> Fullscreen photo.** On the radar, tap the
+aircraft silhouette to open a detail card. The card has a smaller 152x64
+thumbnail, registration, aircraft type, altitude, speed, distance and track,
+with a **VIEW PHOTO** button. Tap the thumbnail or the button to open a
+**320x166 full-width aircraft picture**. From the large picture choose
+**< DETAILS** or **BACK TO MAP**. The details screen also has its own
+**BACK TO MAP** control. Accidental taps elsewhere don't exit the card.
 
-The new ILI9341 build reserves **304×128 pixels** at the top of the
-320×240 details page — 304 columns rather than 144 — while leaving
-registration, altitude, speed, distance, ICAO type, heading and creator
-credit visible below the photograph. It renders direct little-endian
-RGB565 rows from microSD (only **608 bytes per row**, 77,824 bytes per
-on-disk image). This avoids live JPEG decoding for packed models.
+The RADAR map has slim top and bottom bars, smaller stacked + / - / H
+controls, a muted colour treatment that also works with the existing
+`/maps/` offline tile pack, clearer status labels and the mandatory
+OpenStreetMap contributor attribution. The previous no-whole-screen-refresh
+aircraft redraw is preserved. During ADS-B refreshes the photo is not
+repainted.
 
-The model-photo pack uses manually chosen Wikimedia Commons exterior
-pictures for known problem models (Airbus A319/A320/A321, Boeing
-737-800 and ATR 72-600), and verifies MIME/licence/creator and URL.
-Photographs are **representative aircraft models**, not the real
-registration or necessarily the present airline. Attributions and
-original file-page URLs are provided.
+## Photo data on SD (new pack)
 
-## Installation
+For the 2.8-inch 320x240 ILI9341, photos are generated on a desktop from
+licensed Wikimedia Commons JPEGs and stored as **little-endian RGB565**
+(one row at a time, no large image framebuffers):
 
-Copy the ZIP's `aircraft/` folder to the **root** of the FAT32 microSD
-alongside the existing `maps/` folder:
+- `/aircraft/B738.rgb565` — 304×128 px, 77,824 bytes, source for the small thumbnail
+- `/aircraft/B738.full.rgb565` — 320×166 px, 106,240 bytes, dedicated fullscreen picture
+- `/aircraft/B738.txt` — photographer, licence and original Commons page URL
 
-```text
-microSD/
-    maps/...
-    aircraft/
-        B738.rgb565
-        B738.txt
-        A320.rgb565
-        A320.txt
-        ...
-```
+This naming pattern repeats for other supported ICAO types. The old
+`/aircraft/*.rgb565` files still work for the thumbnail; if a fullscreen
+file is missing, the old 304x128 asset is centred without pretending it
+contains more detail. Licence credit remains visible.
 
-Each `.txt` contains the photographer, licence and original Commons
-file link. The creator and licence appear on the details screen.
+**Install both the new firmware and the new `aircraft/` folder**. Existing
+`maps/` tiles, Wi-Fi setup, SD formatting, and live ADS-B decoding do not
+need changing. Do not erase flash or NVS. The update script checks the
+partition layout and backs up the current app.
 
-**The new firmware REQUIRES the new 304×128 RGB565 pack**. The previous
-144×96 images are intentionally not accepted as direct-render photos
-because they would show a smaller/cropped image. Keep both the new
-firmware and map/data ZIP backups.
+Representative model photos may be from a different airline or aircraft
+registration from the one being tracked. No exact-aircraft match is claimed.
 
-Not all ICAO type codes have a prepared picture. The model lookup is
-`src/aircraft_type_photo.h`; a missing model is not substituted with
-an unrelated aircraft. When a prepared SD image is absent, the older
-licensed-JPEG fallback may be attempted over Wi-Fi but is not the
-recommended rendering path.
+## Firmware compatibility
 
-The `PHOTO_TEST` serial command now expects a 77,824-byte B738 RGB565
-file and shows it for eight seconds. `VERSION` verifies the active
-firmware. The live aircraft feed and map packs are not changed.
+The two-USB CYD 2.8-inch **ILI9341_2_DRIVER / HSPI / INVERSION_ON**
+profile remains the physically confirmed display configuration.
+All other hardware variants are CI compile targets only. The new
+touchscreen layout and fullscreen photo have not yet been tested on the
+user's physical CYD.
 
-## How the pictures are sourced
+A user can test the page by selecting an aircraft for which an SD photo
+exists, tapping the thumbnail, using both navigation buttons, and
+waiting 30+ seconds for a telemetry refresh.
 
-- `tools/build_aircraft_photo_pack.py` — retrieves an open-licence
-  aircraft-exterior photograph and metadata from Wikimedia Commons.
-- `tools/build_aircraft_photo_rgb565.py` — crops/sizes to 304×128,
-  applies restrained sharpening, emits little-endian RGB565 rows.
-- `.github/workflows/aircraft-photo-pack.yml` — validates image dimensions,
-  creator credits, source URLs and file sizes.
+## Sources & reuse conditions
 
-All photos are the copyright of their individual Commons creators
-and carry their **own licences**. SkyTracker software remains MIT.
-When distributing altered CC BY-SA photos, comply with their
-attribution and share-alike conditions.
+The representative aircraft photographs are downloaded from Wikimedia
+Commons; each keeps its individual author/licence metadata and original
+file page. Existing Commons permissions and attribution/share-alike
+obligations still apply. Do not copy Mayhem bitmap assets or other
+third-party artwork into this MIT-licensed project without licence review.
 
-## Known limitations
-
-The 320×240 ILI9341 is not a high-resolution photographic display, so a
-304×128 picture still has finite detail. Both the revised full-width
-details card and source image quality need an actual screen photograph
-from the working CYD to validate the final visual result.
-
-Do not copy proprietary planespotter images without permission.
-This experimental firmware currently allows unverified TLS for public
-read-only image fallback and is not a production-security release.
-
-- https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia
+- <https://commons.wikimedia.org/wiki/Commons:Reusing_content_outside_Wikimedia>
+- <https://github.com/shrek1802/CYD-SkyTracker/tree/development/sd-ota-foundation>
