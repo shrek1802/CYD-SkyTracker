@@ -77,6 +77,21 @@ MODELS = {
     "GLF6": ("Gulfstream G650", "Gulfstream G650"),
     "CL60": ("Bombardier Challenger 600", "Bombardier Challenger 600"),
     "LJ45": ("Learjet 45", "Learjet 45"),
+    "B77F": ("Boeing 777F", "Boeing 777F"),
+    "A400": ("Airbus A400M", "Airbus A400M"),
+    "C130": ("Lockheed C-130 Hercules", "Lockheed C-130 Hercules"),
+    "C17": ("Boeing C-17 Globemaster III", "Boeing C-17 Globemaster III"),
+    "E145": ("Embraer ERJ 145", "Embraer ERJ 145"),
+    "SF34": ("Saab 340", "Saab 340"),
+    "C152": ("Cessna 152", "Cessna 152"),
+    "DA40": ("Diamond DA40", "Diamond DA40"),
+    "DA42": ("Diamond DA42", "Diamond DA42"),
+    "SR22": ("Cirrus SR22", "Cirrus SR22"),
+    "EC35": ("Eurocopter EC135", "Eurocopter EC135"),
+    "A139": ("Leonardo AW139", "Leonardo AW139"),
+    "R44": ("Robinson R44", "Robinson R44"),
+    "S76": ("Sikorsky S-76", "Sikorsky S-76"),
+    "CL35": ("Bombardier Challenger 350", "Bombardier Challenger 350"),
 }
 # Hand-picked EXTERIOR airframe images, verified as examples of each model.
 # Commons licensing and author metadata are fetched afresh and validated.
