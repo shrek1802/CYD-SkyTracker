@@ -46,6 +46,8 @@ void finishSplash() {
     if (shown < kMinSplashMs) delay(kMinSplashMs - shown);
 }
 uint32_t lastFlightFetch = 0;
+uint32_t lastMotionFrame = 0;
+constexpr uint32_t kMotionFrameMs = 2000; // redraw only moved aircraft
 uint32_t lastWiFiRetry = 0;
 bool mapShowing = false;
 bool touchingLastFrame = false;
@@ -409,9 +411,9 @@ void loop() {
         }
         touchingLastFrame = pressed;
     }
-    if (mapShowing && millis() - lastFlightFetch > 30000UL) {
-        lastFlightFetch = millis();
+    if (mapShowing && millis() - lastFlightFetch >= tracker.pollIntervalMs()) {
         const bool ok = tracker.poll();
+        lastFlightFetch = millis(); // never count slow HTTP time toward next poll
         Serial.printf("ADS-B: %s (%d aircraft)%s\\n",
                       tracker.status().c_str(), tracker.count(), ok ? "" : " - retrying");
         if (detailShowing && !tracker.hasSelection()) {
@@ -429,6 +431,13 @@ void loop() {
             tracker.drawChanges(display, mapView, sdReady);
             mapView.drawFlightStatus(display, tracker.count(), tracker.status());
         }
+    }
+    // Keep radar symbols moving between network snapshots. This does not
+    // make additional HTTP requests and never redraws the whole map.
+    if (mapShowing && !detailShowing && tracker.hasData() &&
+        millis() - lastMotionFrame >= kMotionFrameMs) {
+        lastMotionFrame = millis();
+        tracker.drawChanges(display,mapView,sdReady);
     }
     if (mapShowing && WiFi.status() != WL_CONNECTED &&
         millis() - lastWiFiRetry > 30000UL) {
