@@ -1,7 +1,7 @@
 import unittest
 from PIL import Image
 
-from tools.build_aircraft_photo_rgb565 import W, H, PIXEL_BYTES, encode_rgb565, prepare
+from tools.build_aircraft_photo_rgb565 import W, H, PIXEL_BYTES, FULL_W, FULL_H, encode_rgb565, prepare_full
 
 
 class PhotoRgb565Tests(unittest.TestCase):
@@ -19,6 +19,11 @@ class PhotoRgb565Tests(unittest.TestCase):
         raw = encode_rgb565(im)
         self.assertEqual(len(raw), PIXEL_BYTES)
         self.assertEqual(PIXEL_BYTES, 77824)
+
+    def test_fullscreen_dimensions(self):
+        self.assertEqual(FULL_W, 320)
+        self.assertEqual(FULL_H, 166)
+        self.assertEqual(FULL_W * FULL_H * 2, 106240)
 
     def test_channel_round_trip_rgb565(self):
         im = Image.new("RGB", (1, 1), (130, 66, 244))
