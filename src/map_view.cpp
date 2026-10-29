@@ -292,7 +292,7 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
 }
 
 void MapView::drawFlightStatus(TFT_eSPI& tft,int count,const String& status,
-                               int ageSeconds) {
+                               int ageSeconds,const char* selectedFlight) {
     const bool live=status.startsWith("Live");
     // Small top-panel repairs only. No full map redraw during ADS-B polls.
     tft.fillRect(99,0,137,SkyUI::kTop,SkyUI::kPanel);
@@ -304,6 +304,13 @@ void MapView::drawFlightStatus(TFT_eSPI& tft,int count,const String& status,
     tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
     tft.setCursor(163,10);
     tft.printf("%d ACFT",count);
+    // A selected plane's real flight callsign, without cluttering every icon.
+    tft.fillRect(160,bottom_+1,87,12,SkyUI::kPanel);
+    if(selectedFlight && selectedFlight[0]) {
+        tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
+        tft.setCursor(162,bottom_+3);
+        tft.print(String(selectedFlight).substring(0,13));
+    }
     // One short status slot, updated by time without touching the tile area.
     tft.fillRect(width_-69,bottom_+1,66,12,SkyUI::kPanel);
     tft.setTextColor(live?SkyUI::kGreen:SkyUI::kGold,SkyUI::kPanel);
