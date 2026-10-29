@@ -43,6 +43,7 @@ PINNED = {
     "A320": "File:EasyJet Airbus A320-200 G-EZRT.jpg",
     "A321": "File:EVA Air Airbus A321-211 B-16202 Taking off from Taipei Songshan Airport 20140917.jpg",
     "B738": "File:Ryanair UK Boeing 737-800.jpg",
+    "B38M": "File:N8801Q - Boeing 737 MAX-8 - Southwest Airlines.jpg",
     "AT76": "File:ATR 72-600 in flight.jpg",
     "A21N": "File:Airbus A321neo EI-LRE MD1.jpg",
 }
