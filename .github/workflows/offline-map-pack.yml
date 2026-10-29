@@ -47,7 +47,22 @@ jobs:
               assert tiles, f'No maps at zoom {level}'
               assert len(z.read(tiles[0])) == 131072, f'Wrong RGB565 size at zoom {level}'
             assert 'OpenStreetMap' in z.read('maps/attribution.txt').decode()
-            print('Validated', sum(n.endswith('.rgb565') for n in names), 'offline RGB565 tiles')
+            day = sorted(n for n in names if n.endswith('.rgb565') and n.startswith('maps/9/'))
+            night = sorted(n for n in names if n.endswith('.rgb565') and n.startswith('maps/night/9/'))
+            assert day, 'Day map tiles missing'
+            assert len(day) == len(night), (len(day), len(night))
+            for name in day:
+              equivalent='maps/night/'+name[len('maps/'):]
+              assert equivalent in names, ('Missing night tile', equivalent)
+              assert len(z.read(equivalent)) == 131072
+            # The new night map must differ from daylight tiles, not be an
+            # accidentally copied/fake 'theme' with the same pixels.
+            assert z.read(day[0]) != z.read('maps/night/'+day[0][len('maps/'):])
+            meta=__import__('json').loads(z.read('maps/map-pack.json'))
+            assert meta['cartography']=='day-and-night-aviation-v3'
+            assert meta['themes']['night']=='/maps/night/z/x/y.rgb565'
+            print('Validated', sum(n.endswith('.rgb565') for n in names),
+                  'day/night offline RGB565 tiles, legacy paths retained')
           PY
       - uses: actions/upload-artifact@v4
         with:
