@@ -152,11 +152,11 @@ def draw_land(draws, features, z, style):
 
 def draw_cities(draws, features, z, style):
     palette = PALETTES[style]
-    city_font = font(12 if z <= 6 else 13, True)
-    small_font = font(11, False)
+    city_font = font({5:9,6:10,7:10,8:11}[z], True)
+    small_font = font({5:8,6:9,7:9,8:10}[z], False)
     # Show metropolitan labels at very broad zooms; add smaller cities as
     # the user zooms towards the Midlands. Cross-tile labels are continuous.
-    maxrank = {5:2,6:4,7:6,8:8}[z]
+    maxrank = {5:1,6:2,7:3,8:5}[z]
     visible = []
     for feature in features:
         geometry = feature.get("geometry") or {}
@@ -186,7 +186,9 @@ def draw_cities(draws, features, z, style):
         width,height=bbox[2]-bbox[0],bbox[3]-bbox[1]
         x=round(u-width/2)
         y=round(v-height-4)
-        box=(x-3,y-3,x+width+3,y+height+3)
+        separation={5:22,6:20,7:16,8:13}[z]
+        box=(x-separation,y-separation,
+             x+width+separation,y+height+separation)
         if any(not (box[2]<b[0] or box[0]>b[2] or
                     box[3]<b[1] or box[1]>b[3]) for b in used):
             continue
@@ -243,7 +245,7 @@ def main():
     maps=output/"maps"
     (maps/"wide-map-pack.json").write_text(json.dumps({
         "format":"CYD-SkyTracker-rgb565-le-v1",
-        "purpose":"Add zoom levels 5-8 to existing day/night zoom 9-13 SD pack",
+        "purpose":"Uncluttered zoom levels 5-8, matches cleaner local zoom 9-13 map pack",
         "zoom_tile_counts":counts,"zoom_radius_km":RADIUS,
         "day_pattern":"/maps/z/x/y.rgb565",
         "night_pattern":"/maps/night/z/x/y.rgb565",
