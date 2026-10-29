@@ -18,7 +18,7 @@ class PhotoRgb565Tests(unittest.TestCase):
         im = Image.new("RGB", (W, H), (10, 22, 35))
         raw = encode_rgb565(im)
         self.assertEqual(len(raw), PIXEL_BYTES)
-        self.assertEqual(PIXEL_BYTES, 27648)
+        self.assertEqual(PIXEL_BYTES, 77824)
 
     def test_channel_round_trip_rgb565(self):
         im = Image.new("RGB", (1, 1), (130, 66, 244))
