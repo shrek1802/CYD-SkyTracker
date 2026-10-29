@@ -1,17 +1,32 @@
 #include "map_view.h"
 #include "geo.h"
+#include "ui_style.h"
 #include <SD.h>
 #include <cmath>
 #include <cstdio>
 #include <algorithm>
 
 namespace {
-constexpr uint16_t kBg = 0x2104;
+constexpr uint16_t kBg = 0x10A4;
 constexpr uint16_t kSea = 0x10A2;
-constexpr uint16_t kPanel = 0x08A3;
+constexpr uint16_t kPanel = SkyUI::kPanel;
 constexpr int kSide = Geo::kTilePixels;
 constexpr int kMaxZoom = 16;
 uint16_t rowPixels[kSide]; // 512 bytes, allocated once
+// Muted cartographic palette for existing SD packs: reduce the saturated
+// magenta/cyan roads while keeping dark text/roads legible. This means the
+// user's improved 935-tile pack does NOT need rebuilding.
+inline void softenMapRow(uint16_t* pixels,int count) {
+    for(int i=0;i<count;++i) {
+        const uint16_t p=pixels[i];
+        const int r=(p>>11)&31,g=(p>>5)&63,b=p&31;
+        const int grey=(3*r+3*g+b)/10; // approx 5-bit luminance
+        const int nr=(r*2+grey*3)/5;
+        const int ng=(g*2+(grey*2)*3)/5;
+        const int nb=(b*2+grey*3)/5;
+        pixels[i]=uint16_t((nr<<11)|(ng<<5)|nb);
+    }
+}
 void missingTile(TFT_eSPI& t, int x, int y, int w, int h, int tx, int ty) {
     const uint16_t c = ((tx + ty) & 1) ? kBg : kSea;
     t.fillRect(x, y, w, h, c);
@@ -37,10 +52,10 @@ void MapView::panPixels(int dx, int dy) {
     centerLat_ = Geo::yToLatitude(Geo::clamp(wy, 0.0, Geo::worldSize(zoom_)), zoom_);
 }
 void MapView::tap(int x, int y, int w, int h) {
-    if (x < w - 46 || y < 32 || y >= h - 20) return;
-    if (y < 76) setZoom(zoom_ + 1);
-    else if (y < 120) setZoom(zoom_ - 1);
-    else if (y < 165) {
+    if (!SkyUI::mapControlHit(x,y,w))return;
+    if (y < 69) setZoom(zoom_ + 1);
+    else if (y < 104) setZoom(zoom_ - 1);
+    else if (y <= 144) {
         centerLat_ = homeLat_;
         centerLon_ = homeLon_;
     }
@@ -104,6 +119,7 @@ void MapView::drawTiles(TFT_eSPI& tft) {
                     ok = false;
                     break;
                 }
+                softenMapRow(rowPixels,dstW);
                 tft.pushImage(dstX, dstY + y, dstW, 1, rowPixels);
             }
             tft.endWrite();
@@ -167,6 +183,7 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
                         ok=false;
                         break;
                     }
+                    softenMapRow(rowPixels,count);
                     tft.pushImage(dl,dt+line,count,1,rowPixels);
                 }
                 tft.endWrite();
@@ -199,81 +216,63 @@ void MapView::restoreRect(TFT_eSPI& tft, int x, int y, int w, int h, bool sdRead
         tft.drawFastVLine(hx,hy-4,9,TFT_YELLOW);
     }
 
-    // Protect the map zoom/Home controls from a plane silhouette crossing them.
-    if(r>width_-46 && t<170 && b>32) {
-        const int bx=width_-41;
-        const int ys[]={38,82,126};
-        const char* names[]={"+","-","HOME"};
-        for(int i=0;i<3;++i) {
-            if(ys[i]+37<=t||ys[i]>=b)continue;
-            tft.fillRoundRect(bx,ys[i],36,37,5,kPanel);
-            tft.setTextColor(TFT_WHITE,kPanel);
-            tft.setTextSize(1);
-            tft.setCursor(bx+(i==2?5:14),ys[i]+12);
-            tft.print(names[i]);
+    // Redraw only controls intersecting the repaired map patch.
+    for(int i=0;i<3;++i) {
+        const int yy=SkyUI::kControlY[i];
+        if(r>=width_-SkyUI::kControlW-5 && b>=yy && t<=yy+SkyUI::kControlH) {
+            SkyUI::button(tft,width_-SkyUI::kControlW-5,yy,
+                          SkyUI::kControlW,SkyUI::kControlH,
+                          i==0?"+":(i==1?"-":"H"));
         }
     }
 }
 
 void MapView::drawFlightStatus(TFT_eSPI& tft,int count,const String& status) {
-    // Update a tiny header/footer area, never the map background.
-    tft.fillRect(110,0,width_>320?90:85,29,kPanel);
+    // Tiny, stable status areas: no map flash on 30-second ADS-B polls.
+    tft.fillRect(110,0,88,SkyUI::kTop,SkyUI::kPanel);
     tft.setTextSize(1);
-    tft.setTextColor(TFT_YELLOW,kPanel);
-    tft.setCursor(110,9);
-    tft.printf("%d planes",count);
-    tft.fillRect(0,bottom_,width_>220?205:width_,13,kPanel);
-    tft.setTextColor(TFT_WHITE,kPanel);
-    tft.setCursor(5,bottom_+1);
-    tft.print(status.substring(0,23));
-}
+    tft.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+    tft.setCursor(112,10);
+    tft.printf("%d PLANES",count);
 
-void MapView::drawUi(TFT_eSPI& tft, bool wifiConnected, bool sdReady, int missingCount) {
-    tft.fillRect(0, 0, width_, top_, kPanel);
+    tft.fillRect(5,bottom_+2,142,11,SkyUI::kPanel);
+    tft.setCursor(6,bottom_+3);
+    tft.setTextColor(SkyUI::kGreen,SkyUI::kPanel);
+    tft.print(status.startsWith("Live")?"LIVE ADS-B":status.substring(0,21));
+}
+void MapView::drawUi(TFT_eSPI& tft,bool wifiConnected,bool sdReady,int missingCount) {
+    tft.fillRect(0,0,width_,top_,SkyUI::kPanel);
     tft.setTextSize(1);
-    tft.setTextColor(TFT_CYAN, kPanel);
-    tft.setCursor(6, 9);
+    tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
+    tft.setCursor(6,10);
     tft.print("SKYTRACKER");
-    tft.setTextColor(TFT_WHITE, kPanel);
-    tft.setCursor(width_ - 114, 9);
-    tft.printf("z%d  %s", int(zoom_), wifiConnected ? "WiFi OK" : "Offline");
-    const int right = width_ - 41;
-    const int controlY[] = {38, 82, 126};
-    const char* labels[] = {"+", "-", "HOME"};
-    for (int i = 0; i < 3; ++i) {
-        tft.fillRoundRect(right, controlY[i], 36, 37, 5, kPanel);
-        tft.setTextColor(TFT_WHITE, kPanel);
-        tft.setCursor(right + (i == 2 ? 5 : 14), controlY[i] + 12);
-        tft.print(labels[i]);
+    tft.setCursor(width_-112,10);
+    tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    tft.printf("Z%d",int(zoom_));
+    tft.setTextColor(wifiConnected?SkyUI::kGreen:SkyUI::kGold,SkyUI::kPanel);
+    tft.setCursor(width_-76,10);
+    tft.print(wifiConnected?"ONLINE":"OFFLINE");
+
+    for(int i=0;i<3;++i) {
+        SkyUI::button(tft,width_-SkyUI::kControlW-5,SkyUI::kControlY[i],
+                      SkyUI::kControlW,SkyUI::kControlH,
+                      i==0?"+":(i==1?"-":"H"));
     }
-    tft.fillRect(0, bottom_, width_, tft.height() - bottom_, kPanel);
-    tft.setCursor(5, bottom_ + 6);
-    tft.setTextColor(TFT_WHITE, kPanel);
-    if (!sdReady) tft.print("Insert FAT32 SD card with /maps/");
-    else if (missingCount) tft.printf("%d tile(s) missing at zoom %u", missingCount, unsigned(zoom_));
-    else tft.print("Local map - development build");
-    // Always show attribution on the device when a provider has supplied it.
-    // Read at most 75 bytes, avoiding unbounded SD file/string allocations.
-    if (sdReady) {
-        File attribution = SD.open("/maps/attribution.txt", FILE_READ);
-        tft.setCursor(5, bottom_ + 19);
-        tft.setTextColor(TFT_CYAN, kPanel);
-        if (attribution) {
-            char line[76] = {};
-            const size_t n = attribution.readBytesUntil('\n', line, sizeof(line)-1);
-            line[n] = 0;
-            attribution.close();
-            tft.print(String(line).substring(0, (width_ - 10) / 6));
-        } else {
-            tft.print("Map source attribution not supplied");
-        }
-    }
+
+    tft.fillRect(0,bottom_,width_,tft.height()-bottom_,SkyUI::kPanel);
+    tft.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
+    tft.setCursor(width_-70,bottom_+3);
+    tft.print(sdReady?(missingCount?"MAP GAPS":"SD MAP"):"NO SD");
+    // Display mandatory attribution on every offline-map view.
+    tft.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
+    tft.setCursor(6,bottom_+14);
+    tft.print("(c) OpenStreetMap contributors");
 }
 void MapView::draw(TFT_eSPI& tft, bool sdReady, bool wifiConnected) {
     if (!ready_) return;
     width_ = tft.width();
-    top_ = 32;
-    bottom_ = tft.height() - 32;
+    top_ = SkyUI::kTop;
+    bottom_ = tft.height() - SkyUI::kBottom;
     missing_ = 0;
     tft.fillScreen(kBg);
     if (sdReady) drawTiles(tft);
