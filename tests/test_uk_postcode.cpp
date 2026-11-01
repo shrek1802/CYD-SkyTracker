@@ -13,7 +13,7 @@ int main() {
  assert(format("ng12")=="");
  assert(format("12345")=="");
  assert(format("N?12 3AB")=="");
- assert(format("AA999AA")=="");
+ assert(format("AA9999A")=="");
  assert(format("AA9A 9AA")=="AA9A 9AA");
  assert(format("xx99 9xx")=="XX99 9XX"); // Syntax only, API verifies existence
  std::cout<<"UK postcode format and validation passed\n";
