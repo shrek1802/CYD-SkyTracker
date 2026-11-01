@@ -22,6 +22,10 @@ constexpr int kControlXMargin = 5;
 constexpr int kControlY[3] = {36, 72, 108};
 constexpr int kThemeY = 144;
 constexpr int kRingsY = 180;
+constexpr int kSetupWidth = 48;
+inline bool setupHit(int x,int y,int w) {
+    return y>=0 && y<=kTop && x>=w-kSetupWidth-4;
+}
 inline bool mapControlHit(int x, int y, int w) {
     return x >= w - kControlW - kControlXMargin - 3 &&
            y >= kControlY[0] - 3 && y <= kRingsY + kControlH + 2;
