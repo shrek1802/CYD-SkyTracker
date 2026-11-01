@@ -245,7 +245,7 @@ void statusScreen(const String& heading, const String& line1,
     display.println(line3);
     display.setCursor(8, display.height() - 26);
     display.setTextColor(TFT_ORANGE, TFT_BLACK);
-    display.println("DEVELOPMENT BUILD - NO RADAR YET");
+    display.println("SKYTRACKER | PORTABLE AVIATION RADAR");
     display.setCursor(8, display.height() - 12);
     display.setTextColor(TFT_DARKGREY, TFT_BLACK);
     display.println(BoardProfile::id());
@@ -559,7 +559,7 @@ void setup() {
     Serial.println("Type PHOTO_TEST to show /aircraft/B738.rgb565 without Wi-Fi or ADS-B.");
     Serial.println("Type COLOUR_TEST to compare TFT and SD RGB565 colour patches.");
     Serial.println("Type VERSION to verify that PHOTO_TEST-capable firmware is installed.");
-    Serial.println("Tap SKYTRACKER at top left to open Wi-Fi setup hotspot.");
+    Serial.println("Tap SET on radar to change Wi-Fi or postcode; no reflashing needed.");
 }
 
 void loop() {
