@@ -1,0 +1,8 @@
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/.browse.c_cpp.db*
+.DS_Store
+*.pem
+*secrets*
+.env

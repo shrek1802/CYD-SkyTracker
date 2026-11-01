@@ -1,1 +1,127 @@
-# CYD-SkyTracker
+# CYD SkyTracker ✈️
+
+<p align="center"><img src="docs/logo.svg" width="240" alt="CYD SkyTracker blue aircraft radar logo"></p>
+<p align="center"><strong>Track the sky from your desktop</strong></p>
+
+**A DIY live aircraft-spotting display for the ESP32 Cheap Yellow Display (CYD).**
+
+> **Development status:** First experimental firmware is available for hardware
+> testing. Live aircraft fetching, SD map rendering and touch details are
+> implemented but **not yet validated on actual CYD hardware**. No aircraft
+> photographs, signed OTA updates or public one-click installer yet.
+
+**Want to try the firmware?** Follow the [first-flash guide](docs/FIRST-FLASH.md)
+and download the correct CYD variant's factory image from the latest successful
+[GitHub Actions run](https://github.com/shrek1802/CYD-SkyTracker/actions/workflows/build.yml).
+
+<p align="center">
+  <img width="480" alt="Example ESP32 Cheap Yellow Display board"
+    src="https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/assets/1562562/76c3d481-2523-4b6f-881c-2e29f9368cd0">
+</p>
+
+*CYD hardware photograph from [witnessmenow's CYD repository](https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display). Product display shown is for hardware identification, **not a screenshot of SkyTracker firmware**.*
+
+## The goal
+
+A gift-friendly, standalone aircraft spotting screen. It will show a **real
+local map** centred on the recipient's home, nearby moving aircraft and a
+touch-to-open details page with aircraft type, altitude, speed, route and
+an aircraft photo where available.
+
+The plan is to store **offline geographical map tiles on microSD**, with
+firmware in ESP32 flash and live aircraft updates over 2.4 GHz Wi-Fi.
+The owner sets their Wi-Fi network and home location from their phone via
+a temporary Wi-Fi setup hotspot.
+
+## Hardware
+
+- **ESP32-2432S028R** (2.8-inch CYD; 320 × 240 ILI9341 TFT).
+- **16 GB or 32 GB FAT32 microSD** for map tiles and image cache.
+- USB data cable for initial programming and a USB 5 V supply.
+- Optional angled 3D-printed case.
+
+Not all boards sold as "CYD" share the same pins or display. Only the
+common ESP32-2432S028R is targeted initially.
+
+## Development milestones
+
+- [x] GitHub repository and PlatformIO skeleton
+- [x] CYD screen boot/status page (source added; awaiting CI/hardware test)
+- [x] Phone captive-portal Wi-Fi setup (source added; awaiting test)\n- [x] XPT2046 touchscreen code and calibration (compiled; needs CYD testing)
+- [x] Branded startup splash screen during SD and Wi-Fi initialisation (code added; requires hardware test)
+- [x] Branded GitHub Pages flasher preview with hardware selector (public installer not enabled)
+- [x] SD mount and manual, SHA-256 checked SD-to-flash OTA code (awaiting test)
+- [x] SD RGB565 tile renderer and pan/zoom/home controls (code compiled; pending hardware test)\n- [x] Ubuntu raster MBTiles-to-SD map converter and automated validation (pending final CI checks)
+- [x] Test Wi-Fi ADS-B flight positions and aircraft markers (compiled; pending real-CYD test)
+- [x] Tap aircraft -> flight details (compiled; pending real-CYD test)\n- [ ] Aircraft photo on details screen (future)
+- [ ] Postcode-based phone setup, look-direction and distance
+- [ ] Signed, automatic GitHub Release download to SD card
+- [ ] Verified unattended/one-tap installation with recovery
+- [ ] Public ESP Web Tools one-click browser installer
+
+## For developers
+
+This development build is **not suitable as a gift yet**, but can now be hardware-tested with a matching CYD. Work is proposed
+on the `development/sd-ota-foundation` branch.
+
+To compile using [PlatformIO](https://platformio.org/) (select the correct board profile):
+
+```bash
+pio run -e cyd_2432s028r
+```
+
+GitHub Actions also compiles each change and saves a **development-only**
+firmware artefact. A successful compile is not a hardware test and does not
+make that image a supported public release.
+
+Once Wi-Fi and home coordinates are configured, the current firmware renders offline map tiles from the microSD card. **It now fetches live planes; data and screen behaviour still need testing on real hardware**. If there are no appropriate tiles, the display shows a missing-map warning.\n\nThe current startup page creates a uniquely named setup Wi-Fi hotspot,
+shows its password on the CYD, and serves a phone configuration page at
+`http://192.168.4.1`. The latitude/longitude fields are temporary until
+postcodes and map selection are implemented.
+
+### SD card update proof of concept
+
+The **current test implementation does not download GitHub updates**.
+It supports a *manual USB-serial test command* `INSTALL_SD` after an
+image and its exact SHA-256 digest have been placed on the microSD at
+`/updates/firmware.bin` and `/updates/sha256.txt`, plus an exact board profile identifier in `/updates/board-id.txt`.
+
+Do **not** attempt this until the build and hardware/rollback behaviour
+have been checked. SHA-256 is an integrity check, not publisher
+authentication. Signed update metadata and safe unattended operation are
+future milestones.
+
+See [hardware/variant compatibility](docs/HARDWARE-COMPATIBILITY.md), [offline map instructions](docs/OFFLINE-MAPS.md), [SD update architecture](docs/SD-OTA-DESIGN.md) and
+[upstream code research](docs/CODE-RESEARCH.md).
+
+## How installing will work when released
+
+Visitors will open the GitHub Pages installer, plug the CYD into a
+computer's USB port, choose **Install** in Chrome or Edge, then use
+their phone for setup. Later updates will be staged on the SD card,
+verified and installed over Wi-Fi without needing a computer.
+
+**There is no public one-click install release yet.** The [branded web flasher preview](docs/index.html) and [vector logo](docs/logo.svg) are available for review.
+
+## Sources and credits
+
+- [TheJinxNL/ESP32FlightRadar](https://github.com/TheJinxNL/ESP32FlightRadar)
+  — MIT-licensed map/aircraft UI research.
+- [theqkash/esp32flight](https://github.com/theqkash/esp32flight)
+  — MIT-licensed flight-tracker feature research.
+- [Eiswolf-BG/eiswolfs-flightradar-CYD](https://github.com/Eiswolf-BG/eiswolfs-flightradar-CYD)
+  — read-only architectural reference. Its README has an ambiguous MIT
+  placeholder and the repository has no formal LICENSE file. **No source
+  code from this project has been copied.**
+- [Espressif SD Update example](https://github.com/espressif/arduino-esp32/blob/master/libraries/Update/examples/SD_Update/SD_Update.ino)
+  — official SD-to-flash update reference.
+
+This project is independent and is not affiliated with aviation
+tracking providers. Flight positions and photos depend on third-party
+data availability and licensing.
+
+## Licence
+
+Original SkyTracker code in this repository is released under the
+[MIT licence](LICENSE). Third-party code, when added, must preserve its
+upstream notices and applicable terms.

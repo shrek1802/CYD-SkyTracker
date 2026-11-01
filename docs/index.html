@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#071429">
+<title>CYD SkyTracker — Web Flasher</title>
+<link rel="icon" type="image/svg+xml" href="./logo.svg">
+<style>
+:root{color-scheme:dark;--ink:#ebfaff;--muted:#9ab8cf;--line:#27435e;--accent:#12c7eb}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -15%,#114469 0%,#061528 58%,#020a14 100%);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif}
+main{max-width:850px;margin:auto;padding:22px 20px 80px}
+header{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:20px 0 30px}
+header img{width:126px;filter:drop-shadow(0 0 18px #0699d055)}h1{font-size:clamp(28px,6vw,48px);letter-spacing:-1px;margin:0}
+.kicker{text-transform:uppercase;letter-spacing:.16em;color:var(--accent);font-size:12px;font-weight:750}
+p{color:var(--muted);line-height:1.55}.intro{font-size:18px}
+.panel{border:1px solid var(--line);background:#0b2038dd;border-radius:19px;padding:22px;margin:18px 0}
+h2{font-size:21px;margin:0 0 15px}.label{color:#afcce1;font-weight:650;display:block;margin:0 0 9px}
+select{width:100%;background:#102c48;border:1px solid #38799c;color:white;padding:14px;border-radius:10px;font:inherit}
+.btn{display:inline-block;text-decoration:none;background:#12bde8;color:#041626;border-radius:10px;padding:13px 18px;font-weight:800}
+.btn:focus-visible{outline:3px solid #fff}.btn.disabled{background:#264b67;color:#a8c0d3;cursor:not-allowed;border:1px solid #366484}
+.note{font-size:14px;color:#c7d7e4}.warning{border-left:4px solid #f8b452;padding:8px 16px;background:#192b41;border-radius:0 10px 10px 0}
+code{color:#8eebff}.foot{font-size:13px;color:#86a6bc;margin-top:35px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}
+.cards>div{background:#102940;padding:15px;border-radius:13px;border:1px solid #285072}
+strong{color:#fff}
+</style></head>
+<body><main>
+<header><img src="./logo.svg" alt="CYD SkyTracker radar logo"><div><div class="kicker">Open-source aircraft radar</div><h1>CYD SkyTracker</h1><p class="intro">Live aircraft on your ESP32 CYD touchscreen, with offline SD maps and phone Wi-Fi setup.</p></div></header>
+<div class="warning"><strong>Developer preview.</strong> First-test USB firmware is available from GitHub Actions, but a public one-click web installer is <strong>not yet enabled</strong>. Screen/touch variants still need physical verification.</div>
+<section class="panel"><h2>1. Identify your CYD</h2>
+<label class="label" for="board">Select the exact display controller and model</label>
+<select id="board">
+<option value="cyd_2432s028r">2.8-inch ESP32-2432S028R (ILI9341 classic)</option>
+<option value="cyd_2432s028r_v2">2.8-inch ESP32-2432S028R v2 (ILI9341)</option>
+<option value="cyd_2432s028r_st7789">2.8-inch ESP32-2432S028R v3 (ST7789)</option>
+<option value="cyd_2432s024r">2.4-inch ESP32-2432S024R (ILI9341)</option>
+<option value="cyd_3248s035r">3.5-inch ESP32-3248S035R (ST7796)</option>
+</select>
+<p class="note" id="boardNote">Board profile: <code>cyd_2432s028r</code>. Not physically verified. If you're unsure of the display controller, identify your board before flashing.</p>
+</section>
+<section class="panel"><h2>2. Flash the firmware</h2>
+<p>The final installer will use ESP Web Tools, so users can connect their CYD by USB and flash a signed, board-matched release from Chrome or Edge.</p>
+<span class="btn disabled" aria-disabled="true">One-click install — coming soon</span>
+<p><a class="btn" href="https://github.com/shrek1802/CYD-SkyTracker/blob/development/sd-ota-foundation/docs/FIRST-FLASH.md">First-test USB flash guide</a></p>
+<p class="note">Please don't flash images for another screen model. The flash images currently come from GitHub CI, not published releases.</p>
+</section>
+<section class="panel"><h2>3. Set up using your phone</h2>
+<div class="cards">
+<div><strong>1. Power up</strong><p>Look for the temporary SkyTracker setup Wi-Fi network on the screen.</p></div>
+<div><strong>2. Open setup</strong><p>Connect your phone and browse to <code>192.168.4.1</code>.</p></div>
+<div><strong>3. Track aircraft</strong><p>Enter Wi-Fi and your home position. Tap a plane to see available flight details.</p></div>
+</div>
+</section>
+<p class="foot">CYD SkyTracker · Open-source ESP32 aircraft tracking · <a href="https://github.com/shrek1802/CYD-SkyTracker" style="color:#9de9fd">Source on GitHub</a></p>
+</main>
+<script>
+const selector=document.querySelector('#board');
+const note=document.querySelector('#boardNote');
+selector.addEventListener('change',()=>{
+ const option=selector.options[selector.selectedIndex];
+ note.innerHTML='Board profile: <code>'+selector.value+'</code>. Unverified on physical hardware. Confirm your display controller before flashing.';
+});
+</script>
+</body></html>

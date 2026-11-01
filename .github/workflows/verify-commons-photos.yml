@@ -1,0 +1,45 @@
+name: Verify Commons aircraft photo lookup (one-shot)
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/verify-commons-photos.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify public Commons airframe category API returns image metadata
+        env:
+          PYTHONUNBUFFERED: '1'
+        run: |
+          python - <<'PY'
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          import json
+          p={'action':'query','generator':'categorymembers',
+             'gcmtitle':'Category:G-EUUK (aircraft)',
+             'gcmnamespace':'6','gcmlimit':'20','prop':'imageinfo',
+             'iiprop':'url|mime|extmetadata',
+             'iiextmetadatafilter':'Artist|LicenseShortName',
+             'iiurlwidth':'280','format':'json','formatversion':'2'}
+          req=Request('https://commons.wikimedia.org/w/api.php?'+urlencode(p),
+              headers={'User-Agent':'CYD-SkyTracker/0.3 (+https://github.com/shrek1802/CYD-SkyTracker)',
+                       'Accept':'application/json'})
+          with urlopen(req,timeout=20) as response:
+              j=json.load(response)
+          pages=j.get('query',{}).get('pages',[])
+          matches=[(p.get('title'),i.get('mime',''),i.get('extmetadata',{}).get('LicenseShortName',{}).get('value',''),bool(i.get('thumburl','')))
+                   for p in pages for i in p.get('imageinfo',[])]
+          print('Aircraft-category files returned:',len(pages))
+          for row in matches[:8]:print('  title/mime/licence/thumbnail:',row)
+          assert matches, 'Commons returned no aircraft-category files'
+          assert any(mime=='image/jpeg' and thumb and (lic.startswith('CC BY ') or lic.startswith('CC BY-SA ') or lic in ('CC0','Public domain'))
+                     for _,mime,lic,thumb in matches), 'No acceptable open-licence JPEG thumbnail in first 20 category images'
+          print('PASS: exact airframe category lookup contains a JPEG thumbnail with recognised licence')
+          PY

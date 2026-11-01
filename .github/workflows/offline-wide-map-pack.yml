@@ -1,0 +1,67 @@
+name: Build wider UK SkyTracker maps - zoom 5 to 8
+
+on:
+  push:
+    branches: ['development/sd-ota-foundation']
+    paths:
+      - tools/build_wide_area_maps.py
+      - tools/build_geofabrik_maps.py
+      - tests/test_wide_area_maps.py
+      - .github/workflows/offline-wide-map-pack.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wide_area_map_pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install offline map libraries
+        run: python -m pip install 'Pillow>=11,<13' 'osmium>=4,<5'
+      - name: Test new zoom level generator
+        run: python -m unittest discover -s tests -p 'test_wide_area_maps.py' -v
+      - name: Render Natural Earth British Isles and European map tiles
+        run: |
+          python tools/build_wide_area_maps.py \
+            --lat 52.9548 --lon -1.1581 \
+            --output /tmp/SkyTracker-Wide-SD
+      - name: Validate all zoom levels and both SD themes
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from zipfile import ZipFile
+          f=Path('/tmp/SkyTracker-Wide-SD/SkyTracker-WIDE-AREA-ZOOM-5-8-SD.zip')
+          with ZipFile(f) as z:
+              assert z.testzip() is None
+              names=set(z.namelist())
+              meta=json.loads(z.read('maps/wide-map-pack.json'))
+              count=0
+              for lev in range(5,9):
+                  day=sorted(n for n in names if n.startswith(f'maps/{lev}/') and n.endswith('.rgb565'))
+                  night=sorted(n for n in names if n.startswith(f'maps/night/{lev}/') and n.endswith('.rgb565'))
+                  assert len(day)>0 and len(day)==len(night), (lev,len(day),len(night))
+                  assert len(day)==meta['zoom_tile_counts'][str(lev)]
+                  for path in day:
+                      other='maps/night/'+path[len('maps/'):]
+                      assert other in names
+                      assert len(z.read(path))==256*256*2
+                      assert len(z.read(other))==256*256*2
+                  assert z.read(day[0])!=z.read('maps/night/'+day[0][len('maps/'):])
+                  print(f'Z{lev}: {len(day)} day and {len(night)} night tiles')
+                  count+=len(day)*2
+              assert b'public domain' in z.read('maps/wide-map-attribution.txt')
+              print('PASS wide map RGB565 pack', count, 'tiles')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SkyTracker-UK-Wide-Map-Zoom-5-8-SD
+          path: /tmp/SkyTracker-Wide-SD/SkyTracker-WIDE-AREA-ZOOM-5-8-SD.zip
+          if-no-files-found: error
+          retention-days: 14
