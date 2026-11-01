@@ -84,21 +84,61 @@ String wifiPasswordFor(const String& ssid) {
             return preferences.getString(kWifiPasswords[i],"");
     return "";
 }
+struct WifiPlace {
+    String ssid, password, mode, postcode;
+    float lat=0,lon=0;
+    bool ready=false;
+};
+const char* const kWifiMode[]={"loc_mode","mode2","mode3"};
+const char* const kWifiPostcode[]={"postcode","post2","post3"};
+const char* const kWifiLat[]={"lat","lat2","lat3"};
+const char* const kWifiLon[]={"lon","lon2","lon3"};
+const char* const kWifiReady[]={"loc_ready","ready2","ready3"};
+WifiPlace readWifiPlace(int slot) {
+    WifiPlace p;
+    p.ssid=preferences.getString(kWifiNames[slot],"");
+    p.password=preferences.getString(kWifiPasswords[slot],"");
+    p.mode=preferences.getString(kWifiMode[slot],"");
+    p.postcode=preferences.getString(kWifiPostcode[slot],"");
+    p.lat=preferences.getFloat(kWifiLat[slot],0);
+    p.lon=preferences.getFloat(kWifiLon[slot],0);
+    p.ready=preferences.getBool(kWifiReady[slot],false);
+    return p;
+}
+void writeWifiPlace(int slot,const WifiPlace& p) {
+    preferences.putString(kWifiNames[slot],p.ssid);
+    preferences.putString(kWifiPasswords[slot],p.password);
+    preferences.putString(kWifiMode[slot],p.mode);
+    preferences.putString(kWifiPostcode[slot],p.postcode);
+    preferences.putFloat(kWifiLat[slot],p.lat);
+    preferences.putFloat(kWifiLon[slot],p.lon);
+    preferences.putBool(kWifiReady[slot],p.ready);
+}
 void rememberWifi(const String& ssid,const String& password) {
-    String names[3],passwords[3];
-    names[0]=ssid; passwords[0]=password;
+    WifiPlace saved[3];
+    for(int i=0;i<3;++i)saved[i]=readWifiPlace(i);
+    WifiPlace reordered[3];
+    bool known=false;
+    for(const WifiPlace& p:saved)
+        if(p.ssid==ssid) {
+            reordered[0]=p;
+            known=true;
+            break;
+        }
+    reordered[0].ssid=ssid;
+    reordered[0].password=password;
     int next=1;
-    for(int i=0;i<3 && next<3;++i) {
-        const String existing=preferences.getString(kWifiNames[i],"");
-        if(existing.isEmpty()||existing==ssid)continue;
-        names[next]=existing;
-        passwords[next]=preferences.getString(kWifiPasswords[i],"");
-        ++next;
+    for(const WifiPlace& p:saved) {
+        if(next==3)break;
+        if(p.ssid.isEmpty() || p.ssid==ssid)continue;
+        reordered[next++]=p;
     }
-    for(int i=0;i<3;++i) {
-        preferences.putString(kWifiNames[i],names[i]);
-        preferences.putString(kWifiPasswords[i],passwords[i]);
-    }
+    // The active global lat/lon/postcode and Wi-Fi profile move together.
+    // Returning home can never silently reuse a relative's old postcode.
+    for(int i=0;i<3;++i)writeWifiPlace(i,reordered[i]);
+    Serial.printf("[WIFI] Active location for %s: %s (%s)\n",
+                  ssid.c_str(),known?"remembered":"new",
+                  reordered[0].ready?"ready":"needs setup");
 }
 
 void drawAircraftPopup() {
@@ -408,6 +448,7 @@ void startWifi() {
     }
     WiFi.mode(WIFI_STA);
     Splash::status(display, "Connecting to saved Wi-Fi...");
+    int connectedSlot=-1;
     // Most recently configured first. If none is in range, phone setup
     // activates automatically without needing a computer or flash.
     for(int i=0;i<3 && WiFi.status()!=WL_CONNECTED;++i) {
@@ -420,8 +461,13 @@ void startWifi() {
         const uint32_t started=millis();
         while(WiFi.status()!=WL_CONNECTED && millis()-started<6500UL)
             delay(150);
+        if(WiFi.status()==WL_CONNECTED)connectedSlot=i;
     }
     if (WiFi.status() == WL_CONNECTED) {
+        if(connectedSlot>0) {
+            const WifiPlace visiting=readWifiPlace(connectedSlot);
+            rememberWifi(visiting.ssid,visiting.password);
+        }
         Serial.printf("[WIFI] Connected, local IP %s\n", WiFi.localIP().toString().c_str());
         finishSplash();
         const String mode=preferences.getString("loc_mode","manual");
