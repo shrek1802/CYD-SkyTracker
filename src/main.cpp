@@ -16,6 +16,10 @@
 #include "ui_style.h"
 #include "detail_layout.h"
 #include "colour_diagnostic.h"
+#include "uk_postcode.h"
+#include "postcode_lookup.h"
+#include <cmath>
+#include <cstdlib>
 
 namespace {
 constexpr int SD_CS = BoardProfile::sdCs();
@@ -63,6 +67,7 @@ bool sdReady = false;
 String apSsid;
 String apPassword;
 String lastCommand;
+String setupError;
 
 void drawRadar() {
     if (!mapShowing) return;
@@ -142,46 +147,123 @@ void statusScreen(const String& heading, const String& line1,
     display.println(BoardProfile::id());
 }
 
+String htmlEscape(String value) {
+    value.replace("&","&amp;");
+    value.replace("<","&lt;");
+    value.replace(">","&gt;");
+    value.replace("\"","&quot;");
+    value.replace("'","&#39;");
+    return value;
+}
 String configPage() {
-    return R"HTML(<!doctype html><html lang="en"><head>
+    String page=R"HTML(<!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>CYD SkyTracker Setup</title>
-<style>body{font:16px system-ui;background:#101b2c;color:#eff7ff;max-width:480px;
-margin:2rem auto;padding:1rem}label{display:block;margin-top:1rem}
+<title>SkyTracker - Set location</title>
+<style>
+body{font:16px system-ui;background:#101b2c;color:#eff7ff;max-width:510px;
+margin:1rem auto;padding:1rem}
+h1{color:#72ddf8}p{line-height:1.45}label{display:block;margin-top:1rem}
 input,button{box-sizing:border-box;width:100%;padding:.85rem;border-radius:8px;
 font:inherit}input{border:1px solid #698097;background:#203650;color:#fff}
-button{margin-top:1.5rem;background:#1684c7;color:#fff;border:0}
-small{color:#b8cade}</style></head><body>
-<h1>Aircraft Radar Setup</h1><p>Connect this device to your 2.4 GHz home Wi-Fi.</p>
+button{margin-top:1.5rem;background:#1684c7;color:#fff;border:0;font-weight:700}
+small{color:#b8cade}details{border-top:1px solid #486076;margin-top:1.5rem;padding-top:.8rem}
+summary{cursor:pointer;color:#72ddf8}.error{background:#512c34;padding:12px;border-radius:8px}
+</style></head><body>
+<h1>SKYTRACKER</h1>
+<p>Set your home radar location using a <b>UK postcode</b>. No GPS coordinates needed.</p>
+{{ERROR}}
 <form method="post" action="/save">
-<label>Wi-Fi network name<input name="ssid" required maxlength="32"></label>
-<label>Wi-Fi password<input name="password" type="password" maxlength="63"></label>
-<label>Home latitude<input name="lat" type="number" step="any" min="-90" max="90" required></label>
-<label>Home longitude<input name="lon" type="number" step="any" min="-180" max="180" required></label>
-<button type="submit">Save and connect</button></form>
-<p><small>This is an early prototype. A UK postcode lookup and real aircraft
-map will be added in future versions.</small></p></body></html>)HTML";
+<label>Home Wi-Fi name
+<input name="ssid" maxlength="32" required value="{{SSID}}" autocomplete="off"></label>
+<label>Wi-Fi password
+<input name="password" type="password" maxlength="63"
+placeholder="Leave blank to keep saved password"></label>
+<label>Full UK postcode (recommended)
+<input name="postcode" value="{{POSTCODE}}" maxlength="9"
+placeholder="e.g. NG12 3AB" autocapitalize="characters"></label>
+<p><small>Postcode is resolved after the device joins Wi-Fi; it uses the postcode's
+approximate centre, not your exact property. One lookup needs internet;
+saved coordinates work after that without another lookup.</small></p>
+<details><summary>Manual latitude / longitude (outside UK or fallback)</summary>
+<p><small>Clear the postcode above if you wish to use manual coordinates.</small></p>
+<label>Latitude
+<input name="lat" type="number" step="any" min="-90" max="90" value="{{LAT}}"></label>
+<label>Longitude
+<input name="lon" type="number" step="any" min="-180" max="180" value="{{LON}}"></label>
+</details>
+<button type="submit">Save and start radar</button></form>
+<p><small>If your postcode cannot be found, check Wi-Fi and try again,
+or enter coordinates manually. Maps and aircraft photos on the SD stay unchanged.</small></p>
+</body></html>)HTML";
+    page.replace("{{SSID}}",htmlEscape(preferences.getString("ssid","")));
+    page.replace("{{POSTCODE}}",htmlEscape(preferences.getString("loc_mode","")=="postcode"
+                    ?preferences.getString("postcode",""):String("")));
+    const bool haveLegacy=(preferences.getFloat("lat",0)!=0.0f ||
+                           preferences.getFloat("lon",0)!=0.0f);
+    page.replace("{{LAT}}",haveLegacy?String(preferences.getFloat("lat",0),6):String(""));
+    page.replace("{{LON}}",haveLegacy?String(preferences.getFloat("lon",0),6):String(""));
+    page.replace("{{ERROR}}",setupError.isEmpty()?String(""):
+                 String("<p class=\"error\">")+htmlEscape(setupError)+"</p>");
+    return page;
 }
-
+bool parseCoordinate(const String& text,double minimum,double maximum,double& out) {
+    if(text.length()==0)return false;
+    char* end=nullptr;
+    const double result=std::strtod(text.c_str(),&end);
+    if(end==text.c_str()||!std::isfinite(result)||result<minimum||result>maximum)
+        return false;
+    while(*end==' '||*end=='\t')++end;
+    if(*end!='\0')return false;
+    out=result;
+    return true;
+}
 void handleSave() {
-    const String ssid = web.arg("ssid");
-    const String password = web.arg("password");
-    const String lat = web.arg("lat");
-    const String lon = web.arg("lon");
-    const float latitude = lat.toFloat();
-    const float longitude = lon.toFloat();
-    if (ssid.length() == 0 || ssid.length() > 32 || password.length() > 63 ||
-        lat.length() == 0 || lon.length() == 0 ||
-        latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
-        web.send(400, "text/plain", "Invalid Wi-Fi or location settings");
+    String ssid=web.arg("ssid");
+    ssid.trim();
+    const String password=web.arg("password");
+    String rawPostcode=web.arg("postcode");
+    rawPostcode.trim();
+    const std::string canonical=UkPostcode::format(std::string(rawPostcode.c_str()));
+    double latitude=0,longitude=0;
+    const bool postcodeEntered=rawPostcode.length()>0;
+    if(ssid.isEmpty() || ssid.length()>32 || password.length()>63) {
+        web.send(400,"text/plain","Invalid Wi-Fi name or password");
         return;
     }
-    preferences.putString("ssid", ssid);
-    preferences.putString("password", password);
-    preferences.putFloat("lat", latitude);
-    preferences.putFloat("lon", longitude);
-    web.send(200, "text/html",
-             "<h2>Saved!</h2><p>SkyTracker is restarting and connecting to your Wi-Fi.</p>");
+    if(postcodeEntered && canonical.empty()) {
+        web.send(400,"text/plain","Enter a complete UK postcode, e.g. NG12 3AB");
+        return;
+    }
+    if(!postcodeEntered &&
+       (!parseCoordinate(web.arg("lat"),-90,90,latitude) ||
+        !parseCoordinate(web.arg("lon"),-180,180,longitude))) {
+        web.send(400,"text/plain","Enter a full UK postcode or valid manual coordinates");
+        return;
+    }
+    const String previousSsid=preferences.getString("ssid","");
+    if(ssid!=previousSsid || !password.isEmpty())
+        preferences.putString("password",password);
+    preferences.putString("ssid",ssid);
+    if(postcodeEntered) {
+        const String target=String(canonical.c_str());
+        const bool reused=preferences.getString("loc_mode","")=="postcode" &&
+                          preferences.getString("postcode","")==target &&
+                          preferences.getBool("loc_ready",false);
+        preferences.putString("loc_mode","postcode");
+        preferences.putString("postcode",target);
+        // A new postcode invalidates the previous geographic fix. The new
+        // postcode is never silently mapped to old coordinates.
+        preferences.putBool("loc_ready",reused);
+    } else {
+        preferences.putString("loc_mode","manual");
+        preferences.putString("postcode","");
+        preferences.putFloat("lat",float(latitude));
+        preferences.putFloat("lon",float(longitude));
+        preferences.putBool("loc_ready",true);
+    }
+    web.send(200,"text/html",
+        "<h2>Saved</h2><p>SkyTracker is restarting. "
+        "If a postcode was entered, it will resolve it using home Wi-Fi.</p>");
     delay(1000);
     ESP.restart();
 }
@@ -226,8 +308,46 @@ void startWifi() {
     if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WIFI] Connected, local IP %s\n", WiFi.localIP().toString().c_str());
         finishSplash();
-        const float lat = preferences.getFloat("lat", 0.0f);
-        const float lon = preferences.getFloat("lon", 0.0f);
+        const String mode=preferences.getString("loc_mode","manual");
+        bool locationReady=preferences.getBool("loc_ready",false);
+        float lat=preferences.getFloat("lat",0.0f);
+        float lon=preferences.getFloat("lon",0.0f);
+        // Migrate pre-postcode firmware without discarding valid stored fixes.
+        if(!locationReady && mode!="postcode" &&
+           std::isfinite(lat) && std::isfinite(lon) &&
+           lat>=-90 && lat<=90 && lon>=-180 && lon<=180 &&
+           (lat!=0 || lon!=0)) {
+            locationReady=true;
+            preferences.putBool("loc_ready",true);
+        }
+        if(mode=="postcode" && !locationReady) {
+            Splash::status(display,"Finding UK postcode...");
+            PostcodeLookup::Location resolved;
+            String reason;
+            if(!PostcodeLookup::resolve(preferences.getString("postcode",""),
+                                         resolved,reason)) {
+                setupError=String("Postcode lookup failed: ")+reason+
+                    ". Check your connection or use manual coordinates.";
+                Serial.printf("[LOCATION] %s\n",reason.c_str());
+                startSetupPortal();
+                return;
+            }
+            lat=resolved.latitude;lon=resolved.longitude;
+            preferences.putFloat("lat",lat);
+            preferences.putFloat("lon",lon);
+            preferences.putString("postcode",resolved.postcode);
+            preferences.putBool("loc_ready",true);
+            locationReady=true;
+            Serial.printf("[LOCATION] %s -> %.6f, %.6f\n",
+                          resolved.postcode.c_str(),double(lat),double(lon));
+        }
+        if(!locationReady || !std::isfinite(lat) || !std::isfinite(lon) ||
+           lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+            setupError="Enter a UK postcode or manual coordinates to begin.";
+            startSetupPortal();
+            return;
+        }
+        setupError="";
         mapView.begin(lat, lon, 9);
         tracker.begin(lat, lon, 60);
         mapShowing = true;
