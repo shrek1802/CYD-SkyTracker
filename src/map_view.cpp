@@ -65,6 +65,11 @@ void MapView::panPixels(int dx, int dy) {
     centerLon_ = Geo::xToLongitude(wx, zoom_);
     centerLat_ = Geo::yToLatitude(Geo::clamp(wy, 0.0, Geo::worldSize(zoom_)), zoom_);
 }
+void MapView::centerOn(double lat,double lon) {
+    if(!ready_ || !std::isfinite(lat) || !std::isfinite(lon))return;
+    centerLat_=Geo::clamp(lat,-Geo::kMaxLatitude,Geo::kMaxLatitude);
+    centerLon_=Geo::wrapLongitude(lon);
+}
 void MapView::tap(int x, int y, int w, int h) {
     if (!SkyUI::mapControlHit(x,y,w))return;
     if (y < 69) setZoom(zoom_ + 1);
@@ -327,11 +332,11 @@ void MapView::drawUi(TFT_eSPI& tft,bool wifiConnected,bool sdReady,int missingCo
     tft.setCursor(6,10);
     tft.print("SKYTRACKER");
     tft.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
-    tft.setCursor(width_-83,10);
+    tft.setCursor(width_-85,10);
     tft.printf("Z%u",unsigned(zoom_));
-    tft.setTextColor(wifiConnected?SkyUI::kGreen:SkyUI::kGold,SkyUI::kPanel);
-    tft.setCursor(width_-39,10);
-    tft.print(wifiConnected?"NET":"OFF");
+    // Clear, discoverable setup control for travel/family Wi-Fi changes.
+    SkyUI::button(tft,width_-SkyUI::kSetupWidth-4,3,
+                  SkyUI::kSetupWidth,21,"SET");
 
     for(int i=0;i<3;++i) {
         SkyUI::button(tft,width_-SkyUI::kControlW-5,SkyUI::kControlY[i],
