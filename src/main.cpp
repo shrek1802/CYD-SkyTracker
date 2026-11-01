@@ -68,6 +68,34 @@ String apSsid;
 String apPassword;
 String lastCommand;
 String setupError;
+bool previewShowing = false;
+bool followSelected = false;
+// Keep the active network and two previous locations; changing location
+// must not erase the home's Wi-Fi credentials.
+const char* const kWifiNames[]={"ssid","ssid2","ssid3"};
+const char* const kWifiPasswords[]={"password","pass2","pass3"};
+String wifiPasswordFor(const String& ssid) {
+    for(int i=0;i<3;++i)
+        if(preferences.getString(kWifiNames[i],"")==ssid)
+            return preferences.getString(kWifiPasswords[i],"");
+    return "";
+}
+void rememberWifi(const String& ssid,const String& password) {
+    String names[3],passwords[3];
+    names[0]=ssid; passwords[0]=password;
+    int next=1;
+    for(int i=0;i<3 && next<3;++i) {
+        const String existing=preferences.getString(kWifiNames[i],"");
+        if(existing.isEmpty()||existing==ssid)continue;
+        names[next]=existing;
+        passwords[next]=preferences.getString(kWifiPasswords[i],"");
+        ++next;
+    }
+    for(int i=0;i<3;++i) {
+        preferences.putString(kWifiNames[i],names[i]);
+        preferences.putString(kWifiPasswords[i],passwords[i]);
+    }
+}
 
 void drawRadar() {
     if (!mapShowing) return;
@@ -192,6 +220,9 @@ saved coordinates work after that without another lookup.</small></p>
 <input name="lon" type="number" step="any" min="-180" max="180" value="{{LON}}"></label>
 </details>
 <button type="submit">Save and start radar</button></form>
+<p><small>This device remembers up to three Wi-Fi networks, so you can take
+it to family and return home without losing your original password.
+Update the postcode whenever you move the radar.</small></p>
 <p><small>If your postcode cannot be found, check Wi-Fi and try again,
 or enter coordinates manually. Maps and aircraft photos on the SD stay unchanged.</small></p>
 </body></html>)HTML";
@@ -241,9 +272,13 @@ void handleSave() {
         return;
     }
     const String previousSsid=preferences.getString("ssid","");
-    if(ssid!=previousSsid || !password.isEmpty())
-        preferences.putString("password",password);
-    preferences.putString("ssid",ssid);
+    const String resolvedPassword=password.isEmpty()?wifiPasswordFor(ssid):password;
+    if(resolvedPassword.isEmpty() && ssid!=previousSsid) {
+        web.send(400,"text/plain","Enter the password for the new Wi-Fi network");
+        return;
+    }
+    // Remember old places and try the newly selected network first next boot.
+    rememberWifi(ssid,resolvedPassword);
     if(postcodeEntered) {
         const String target=String(canonical.c_str());
         const bool reused=preferences.getString("loc_mode","")=="postcode" &&
@@ -268,12 +303,29 @@ void handleSave() {
     ESP.restart();
 }
 
+void startWifi();
 void startSetupPortal() {
-    WiFi.disconnect(true);
+    if(portalActive)return;
+    mapShowing=false;
+    detailShowing=false;
+    photoFullscreen=false;
+    moreInfoShowing=false;
+    previewShowing=false;
+    followSelected=false;
+    touchingLastFrame=false;
+    tracker.deselect();
+    photo.clear();
+    WiFi.disconnect(false);
     WiFi.mode(WIFI_AP);
     const uint32_t suffix = static_cast<uint32_t>(ESP.getEfuseMac() & 0xFFFFFFU);
     apSsid = String("SkyTracker-") + String(suffix, HEX);
-    apPassword = String("Setup-") + String(suffix, HEX);
+    // Per-session random WPA2 password; unlike a MAC-derived password, it
+    // cannot be calculated by someone standing near the device.
+    const uint32_t secretA=esp_random(),secretB=esp_random();
+    char password[21];
+    snprintf(password,sizeof(password),"ST%08lX%08lX",
+             (unsigned long)secretA,(unsigned long)secretB);
+    apPassword=password;
     if (!WiFi.softAP(apSsid.c_str(), apPassword.c_str())) {
         statusScreen("Setup failed", "Restart the device");
         return;
@@ -288,22 +340,47 @@ void startSetupPortal() {
     web.begin();
     portalActive = true;
     finishSplash();
-    statusScreen("Wi-Fi setup", apSsid,
-                 "Password: " + apPassword, "Phone: http://192.168.4.1");
+    statusScreen("SETUP / TRAVEL", "Network: " + apSsid,
+                 "Password: " + apPassword, "Open: 192.168.4.1");
+    display.setTextSize(1);
+    display.setTextColor(TFT_CYAN,TFT_BLACK);
+    display.setCursor(9,177);
+    display.print("Change Wi-Fi and postcode on phone");
+    if(touch.calibrated())
+        SkyUI::button(display,95,208,130,27,"RETRY WIFI");
+}
+void leaveSetupPortal() {
+    if(!portalActive)return;
+    portalActive=false;
+    dns.stop();
+    web.stop();
+    WiFi.softAPdisconnect(true);
+    touchingLastFrame=false;
+    // Reconnect using the remembered networks without clearing location.
+    startWifi();
 }
 
 void startWifi() {
     const String savedSsid = preferences.getString("ssid", "");
-    if (savedSsid.isEmpty()) {
+    if(savedSsid.isEmpty() && preferences.getString("ssid2","").isEmpty() &&
+       preferences.getString("ssid3","").isEmpty()) {
         startSetupPortal();
         return;
     }
     WiFi.mode(WIFI_STA);
-    WiFi.begin(savedSsid.c_str(), preferences.getString("password", "").c_str());
-    const unsigned long started = millis();
-    Splash::status(display, "Connecting to home Wi-Fi...");
-    while (WiFi.status() != WL_CONNECTED && millis() - started < 12000UL) {
-        delay(150);
+    Splash::status(display, "Connecting to saved Wi-Fi...");
+    // Most recently configured first. If none is in range, phone setup
+    // activates automatically without needing a computer or flash.
+    for(int i=0;i<3 && WiFi.status()!=WL_CONNECTED;++i) {
+        const String ssid=preferences.getString(kWifiNames[i],"");
+        if(ssid.isEmpty())continue;
+        const String password=preferences.getString(kWifiPasswords[i],"");
+        Serial.printf("[WIFI] Trying stored profile %d: %s\n",i+1,ssid.c_str());
+        WiFi.disconnect(false,false);
+        WiFi.begin(ssid.c_str(),password.c_str());
+        const uint32_t started=millis();
+        while(WiFi.status()!=WL_CONNECTED && millis()-started<6500UL)
+            delay(150);
     }
     if (WiFi.status() == WL_CONNECTED) {
         Serial.printf("[WIFI] Connected, local IP %s\n", WiFi.localIP().toString().c_str());
