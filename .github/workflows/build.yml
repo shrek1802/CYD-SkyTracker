@@ -62,6 +62,11 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_flight_motion.cpp -o /tmp/skytracker-motion-test
           /tmp/skytracker-motion-test
+      - name: Check radar popup bounds and touch actions
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_radar_popup.cpp -o /tmp/skytracker-radar-popup
+          /tmp/skytracker-radar-popup
       - name: Test UK postcode normalization and manual fallback syntax
         if: matrix.target == 'cyd_2432s028r'
         run: |
