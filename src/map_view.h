@@ -15,6 +15,7 @@ public:
                           int ageSeconds = -1, const char* selectedFlight = nullptr);
     void tap(int x, int y, int screenWidth, int screenHeight);
     void panPixels(int dx, int dy);
+    void centerOn(double lat,double lon);
     bool project(double lat, double lon, int& x, int& y) const;
     uint8_t zoom() const { return zoom_; }
     bool isReady() const { return ready_; }
