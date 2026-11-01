@@ -7,7 +7,7 @@ inline std::string compact(const std::string& input) {
     std::string out;
     for(unsigned char ch: input) {
         if(ch==' ' || ch=='\t' || ch=='\n' || ch=='\r')continue;
-        if(ch>='a' && ch<='z') ch=unsigned char(ch-'a'+'A');
+        if(ch>='a' && ch<='z') ch=static_cast<unsigned char>(ch-'a'+'A');
         out.push_back(char(ch));
     }
     return out;
