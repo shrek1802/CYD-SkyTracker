@@ -18,6 +18,8 @@
 #include "colour_diagnostic.h"
 #include "uk_postcode.h"
 #include "postcode_lookup.h"
+#include "radar_popup.h"
+#include "aircraft_type_photo.h"
 #include <cmath>
 #include <cstdlib>
 
@@ -70,6 +72,8 @@ String lastCommand;
 String setupError;
 bool previewShowing = false;
 bool followSelected = false;
+bool setupTouchHeld = false;
+bool portalRoutesReady = false;
 // Keep the active network and two previous locations; changing location
 // must not erase the home's Wi-Fi credentials.
 const char* const kWifiNames[]={"ssid","ssid2","ssid3"};
@@ -97,6 +101,37 @@ void rememberWifi(const String& ssid,const String& password) {
     }
 }
 
+void drawAircraftPopup() {
+    if(!mapShowing || detailShowing || !previewShowing)return;
+    const AircraftRecord* a=tracker.selectedRecord();
+    if(!a)return;
+    using namespace RadarPopup;
+    display.fillRoundRect(card.x,card.y,card.w,card.h,5,SkyUI::kPanel);
+    display.drawRoundRect(card.x,card.y,card.w,card.h,5,SkyUI::kAccent);
+    display.setTextSize(1);
+    display.setTextColor(SkyUI::kAccent,SkyUI::kPanel);
+    display.setCursor(card.x+7,card.y+8);
+    display.print(String(a->flight[0]?a->flight:a->hex).substring(0,13));
+    display.setTextColor(SkyUI::kWhite,SkyUI::kPanel);
+    display.setCursor(card.x+7,card.y+23);
+    const auto* model=AircraftTypePhoto::find(a->type);
+    const String modelName=model?String(model->model):
+        a->type[0]?String(a->type):String("Unknown type");
+    display.print(modelName.substring(0,25));
+    display.setTextColor(SkyUI::kMuted,SkyUI::kPanel);
+    display.setCursor(card.x+7,card.y+39);
+    if(a->altitudeFt>=0)display.printf("%d ft",a->altitudeFt);
+    else display.print("-- ft");
+    display.setCursor(card.x+7,card.y+54);
+    if(a->speedKt>=0)display.printf("%.0f kt",double(a->speedKt));
+    else display.print("-- kt");
+    SkyUI::button(display,details.x,details.y,details.w,details.h,"DETAIL",true);
+    SkyUI::button(display,follow.x,follow.y,follow.w,follow.h,
+                  followSelected?"UNFOLLOW":"FOLLOW",followSelected);
+    display.setTextColor(SkyUI::kGold,SkyUI::kPanel);
+    display.setCursor(dismiss.x+4,dismiss.y+2);
+    display.print("x");
+}
 void drawRadar() {
     if (!mapShowing) return;
     // A full map paint is needed only after user-driven pan/zoom or returning
@@ -104,6 +139,7 @@ void drawRadar() {
     tracker.invalidatePaint();
     mapView.draw(display, sdReady, WiFi.status() == WL_CONNECTED);
     tracker.drawMarkers(display, mapView);
+    drawAircraftPopup();
     mapView.drawFlightStatus(display, tracker.count(), tracker.status(),
                              tracker.lastGoodPollMs() ?
                              int((millis()-tracker.lastGoodPollMs())/1000) : -1,
@@ -331,12 +367,15 @@ void startSetupPortal() {
         return;
     }
     dns.start(53, "*", WiFi.softAPIP());
-    web.on("/", HTTP_GET, []() { web.send(200, "text/html", configPage()); });
-    web.on("/save", HTTP_POST, handleSave);
-    web.onNotFound([]() {
-        web.sendHeader("Location", "http://192.168.4.1/", true);
-        web.send(302, "text/plain", "");
-    });
+    if(!portalRoutesReady) {
+        web.on("/", HTTP_GET, []() { web.send(200, "text/html", configPage()); });
+        web.on("/save", HTTP_POST, handleSave);
+        web.onNotFound([]() {
+            web.sendHeader("Location", "http://192.168.4.1/", true);
+            web.send(302, "text/plain", "");
+        });
+        portalRoutesReady=true;
+    }
     web.begin();
     portalActive = true;
     finishSplash();
@@ -560,7 +599,19 @@ void loop() {
             lastCommand += ch;
         }
     }
-    if (mapShowing && touch.calibrated()) {
+    // The AP setup page remains recoverable without a computer. Once
+    // calibrated, the bottom button retries saved Wi-Fi without clearing it.
+    if(portalActive && touch.calibrated()) {
+        int sx=0,sy=0;
+        const bool pressed=touch.sample(display.width(),display.height(),sx,sy);
+        if(pressed) {
+            setupTouchHeld=true;
+            touchEndX=sx;touchEndY=sy;
+        } else if(setupTouchHeld) {
+            setupTouchHeld=false;
+            if(touchEndY>=204)leaveSetupPortal();
+        }
+    } else if (mapShowing && touch.calibrated()) {
         int x = 0, y = 0;
         const bool pressed = touch.sample(display.width(), display.height(), x, y);
         if (pressed) {
@@ -601,7 +652,33 @@ void loop() {
                         photo.clear();drawRadar();
                     }
                 }
+            } else if (SkyUI::setupHit(touchEndX,touchEndY,display.width()) &&
+                       abs(dx)<16 && abs(dy)<16) {
+                startSetupPortal();
+            } else if (previewShowing &&
+                       RadarPopup::dismiss.hit(touchEndX,touchEndY)) {
+                previewShowing=false;followSelected=false;
+                tracker.deselect();drawRadar();
+            } else if (previewShowing &&
+                       RadarPopup::details.hit(touchEndX,touchEndY)) {
+                detailShowing=true;previewShowing=false;
+                photo.searching();drawFlightScreen();
+                const AircraftRecord* a=tracker.selectedRecord();
+                photo.load(a?a->registration:nullptr,
+                           a?a->type:nullptr,sdReady);
+                drawFlightScreen();
+            } else if (previewShowing &&
+                       RadarPopup::follow.hit(touchEndX,touchEndY)) {
+                followSelected=!followSelected;
+                const AircraftRecord* a=tracker.selectedRecord();
+                if(followSelected && a)
+                    mapView.centerOn(a->lat,a->lon);
+                drawRadar();
+            } else if (previewShowing &&
+                       RadarPopup::card.hit(touchEndX,touchEndY)) {
+                // Text/background in the popup isn't a map tap.
             } else if (abs(dx) > 22 || abs(dy) > 22) {
+                followSelected=false;
                 mapView.panPixels(dx, dy);
                 drawRadar();
             } else if (touchEndY < 31 && touchEndX < 98) {
@@ -614,14 +691,15 @@ void loop() {
                 mapView.tap(touchEndX, touchEndY, display.width(), display.height());
                 drawRadar();
             } else if (tracker.selectAt(touchEndX, touchEndY, mapView)) {
-                detailShowing = true;
-                photoFullscreen = false;
-                photo.searching();
-                drawFlightScreen(); // Feedback while Wi-Fi image loads
-                const AircraftRecord* aircraft = tracker.selectedRecord();
-                photo.load(aircraft ? aircraft->registration : nullptr,
-                           aircraft ? aircraft->type : nullptr, sdReady);
-                drawFlightScreen();
+                // Show a fast, map-side preview first; the user can enter
+                // the full photo/telemetry page using its DETAIL button.
+                previewShowing=true;
+                followSelected=false;
+                drawRadar();
+            } else if(previewShowing) {
+                // Tap blank map to dismiss the selected aircraft popup.
+                previewShowing=false;followSelected=false;
+                tracker.deselect();drawRadar();
             }
         }
         touchingLastFrame = pressed;
@@ -631,6 +709,25 @@ void loop() {
         lastFlightFetch = millis(); // never count slow HTTP time toward next poll
         Serial.printf("ADS-B: %s (%d aircraft)%s\\n",
                       tracker.status().c_str(), tracker.count(), ok ? "" : " - retrying");
+        if(previewShowing && !tracker.hasSelection()) {
+            previewShowing=false;
+            followSelected=false;
+            drawRadar();
+        }
+        bool followed=false;
+        if(followSelected && previewShowing && !detailShowing) {
+            const AircraftRecord* target=tracker.selectedRecord();
+            if(target) {
+                int px=0,py=0;
+                const bool onScreen=mapView.project(target->lat,target->lon,px,py);
+                if(!onScreen || abs(px-display.width()/2)>24 ||
+                   abs(py-(SkyUI::kTop+(display.height()-SkyUI::kBottom))/2)>24) {
+                    mapView.centerOn(target->lat,target->lon);
+                    drawRadar();
+                    followed=true;
+                }
+            }
+        }
         if (detailShowing && !tracker.hasSelection()) {
             // A selected flight may leave the API radius. Return to the
             // map instead of showing a frozen, no-longer-updating detail page.
@@ -642,9 +739,10 @@ void loop() {
             // Neither screen repaints its photo every 30s.
             if (moreInfoShowing) tracker.drawExtraDetails(display);
             else if (!photoFullscreen) tracker.updateDetailsTelemetry(display);
-        } else {
+        } else if(!followed) {
             // Aircraft move; the static map background stays on the screen.
             tracker.drawChanges(display, mapView, sdReady);
+            drawAircraftPopup();
             mapView.drawFlightStatus(display, tracker.count(), tracker.status(),
                              tracker.lastGoodPollMs() ?
                              int((millis()-tracker.lastGoodPollMs())/1000) : -1,
@@ -660,6 +758,7 @@ void loop() {
         millis() - lastMotionFrame >= kMotionFrameMs) {
         lastMotionFrame = millis();
         tracker.drawChanges(display,mapView,sdReady);
+        drawAircraftPopup();
         mapView.drawFlightStatus(display,tracker.count(),tracker.status(),
                     tracker.lastGoodPollMs() ?
                     int((millis()-tracker.lastGoodPollMs())/1000) : -1,
