@@ -62,6 +62,11 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_flight_motion.cpp -o /tmp/skytracker-motion-test
           /tmp/skytracker-motion-test
+      - name: Test UK postcode normalization and manual fallback syntax
+        if: matrix.target == 'cyd_2432s028r'
+        run: |
+          g++ -std=c++17 -Wall -Wextra -Werror tests/test_uk_postcode.cpp -o /tmp/skytracker-postcode-test
+          /tmp/skytracker-postcode-test
       - name: Test aircraft photo card geometry and compass labels
         if: matrix.target == 'cyd_2432s028r'
         run: |
