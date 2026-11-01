@@ -67,6 +67,9 @@ jobs:
         run: |
           g++ -std=c++17 -Wall -Wextra -Werror tests/test_uk_postcode.cpp -o /tmp/skytracker-postcode-test
           /tmp/skytracker-postcode-test
+      - name: Verify secure UK postcode lookup against public example
+        if: matrix.target == 'cyd_2432s028r'
+        run: python tests/test_postcode_service.py
       - name: Test aircraft photo card geometry and compass labels
         if: matrix.target == 'cyd_2432s028r'
         run: |
